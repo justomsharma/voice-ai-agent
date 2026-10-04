@@ -52,3 +52,17 @@ def test_raw_drops_trailing_partial_frame(tmp_path):
     p.write_bytes(b"\x01\x00\x02\x00\x03\x00" + b"\x04")  # 3 stereo samples + 1 stray byte
     y = read_raw(p, AudioFormat(8000, 2))
     assert y.shape == (1, 2) and y.tolist() == [[1, 2]]
+
+
+@pytest.mark.parametrize("content", [
+    b"",                                   # 0-byte file left by an aborted run
+    b"not a wav file at all, just text",   # wrong format entirely
+    # 32-bit float WAV header (format tag 3), as many TTS engines produce
+    b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x03\x00\x01\x00\x80\x3e\x00\x00"
+    b"\x00\xfa\x00\x00\x04\x00\x20\x00data\x00\x00\x00\x00",
+])
+def test_unreadable_wav_raises_valueerror(tmp_path, content):
+    p = tmp_path / "bad.wav"
+    p.write_bytes(content)
+    with pytest.raises(ValueError):
+        read_wav(p)

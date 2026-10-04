@@ -146,15 +146,17 @@ The block size is a trade-off:
 Latency begins before any of our code runs:
 
 ```
-sound hits mic ─┬─ ≥ block_ms        a block is only delivered once it's full (20 ms)
-                ├─ + driver buffer    printed at start: "driver-reported input buffering"
-                └─ + delivery jitter  the bursts in "since prev"
+sound hits mic ─┬─ block_ms          a block is only delivered once it's full (20 ms)
+                ├─ driver/OS buffers  PortAudio's input-latency estimate, printed at start
+                └─ delivery jitter    the bursts in "since prev"
                       → our callback finally sees the block
 ```
 
-`record.py` prints this floor when it starts. On the test machine it was
-20 ms + 40 ms. Every later stage of the agent adds to it; nothing can
-subtract from it.
+`record.py` prints both numbers when it starts. On the test machine
+(Windows MME) it reported a 20 ms block and a 40 ms input-latency estimate.
+Whether that estimate already includes the block depends on the host API,
+so treat 40-60 ms as the floor. Every later stage of the agent adds to it;
+nothing can subtract from it.
 
 ## Design notes
 

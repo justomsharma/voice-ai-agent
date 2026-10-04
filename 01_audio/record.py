@@ -125,11 +125,14 @@ def record(args: argparse.Namespace) -> tuple[AudioFormat, np.ndarray, int]:
                         blocksize=blocksize, device=args.device, callback=callback) as stream:
         # Latency starts here, before a line of our code runs:
         #   1. block size: a block can't be delivered until its last frame
-        #      has been captured, so the oldest frame is >= block_ms old.
-        #   2. driver/PortAudio buffering on top (stream.latency, below).
-        # Every later stage (VAD, STT, ...) can only add to this floor.
-        print(f"  (latency floor: {args.block_ms} ms block + {stream.latency * 1000:.1f} ms "
-              "driver-reported input buffering)")
+        #      has been captured, so its oldest frame is >= block_ms old.
+        #   2. driver/OS buffering. stream.latency is PortAudio's estimate of
+        #      the stream's whole input latency; whether it already counts
+        #      our block depends on the host API, so we show both numbers
+        #      rather than adding them.
+        # Every later stage (VAD, STT, ...) can only add to this.
+        print(f"  (latency: a {args.block_ms} ms block can't arrive before it's full; "
+              f"PortAudio estimates {stream.latency * 1000:.1f} ms total input latency)")
         last_arrival = None
         try:
             while got < target_frames:
@@ -198,8 +201,11 @@ def main(argv: list[str] | None = None) -> int:
         print("error: nothing was recorded", file=sys.stderr)
         return 1
 
-    stem = RECORDINGS_DIR / f"{args.name}_{fmt.sample_rate}hz"
-    wav_path, raw_path = stem.with_suffix(".wav"), stem.with_suffix(".raw")
+    # Build both names directly rather than with Path.with_suffix(): a name
+    # like "take.v2" would make with_suffix treat ".v2_16000hz" as the
+    # extension and replace it, dropping the rate so takes overwrite each other.
+    stem = f"{args.name}_{fmt.sample_rate}hz"
+    wav_path, raw_path = RECORDINGS_DIR / f"{stem}.wav", RECORDINGS_DIR / f"{stem}.raw"
     write_wav(wav_path, fmt, samples)
     write_raw(raw_path, samples)
 

@@ -92,3 +92,23 @@ def test_comparison_table_for_multiple_files(tmp_path, capsys):
     assert main([str(tmp_path / "t_8000.wav"), str(tmp_path / "t_48000.wav"), "--no-plot"]) == 0
     out = capsys.readouterr().out
     assert "== comparison ==" in out and "48000" in out
+
+
+def test_plot_handles_stereo_silent_and_short_inputs():
+    import matplotlib
+
+    matplotlib.use("Agg")  # no window; works headless and in CI
+    import matplotlib.pyplot as plt
+
+    from inspect_audio import plot
+
+    stereo = AudioFormat(48000, 2)
+    mono = AudioFormat(16000, 1)
+    fig = plot([
+        ("stereo", stereo, sine(stereo, secs=0.5)),
+        ("silent", mono, np.zeros((16000, 1), np.int16)),
+        ("short", mono, sine(mono, secs=0.005)),
+    ])
+    assert len(fig.axes) == 9  # 3 rows x [waveform, zoom, spectrum]
+    assert len(fig.axes[0].lines) == 2  # one waveform line per stereo channel
+    plt.close(fig)

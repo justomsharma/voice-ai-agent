@@ -65,6 +65,17 @@ def write_raw(path: str | Path, samples: np.ndarray) -> None:
 
 
 def read_wav(path: str | Path) -> tuple[AudioFormat, np.ndarray]:
+    try:
+        return _read_wav(path)
+    except (wave.Error, EOFError) as e:
+        # The stdlib raises wave.Error for float WAVs ("unknown format: 3",
+        # common from TTS engines) or non-WAV files, and EOFError for a
+        # 0-byte file. Normalise them to ValueError so callers have one
+        # "this isn't a file we can read" exception to handle.
+        raise ValueError(f"{path}: not a readable 16-bit PCM WAV ({str(e) or type(e).__name__})") from e
+
+
+def _read_wav(path: str | Path) -> tuple[AudioFormat, np.ndarray]:
     with wave.open(str(Path(path)), "rb") as w:
         if w.getsampwidth() != 2:
             # Everything downstream (int16 min/max, dBFS reference 32768)

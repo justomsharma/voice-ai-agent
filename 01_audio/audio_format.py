@@ -32,7 +32,8 @@ from dataclasses import dataclass
 # frozen=True: an AudioFormat describes data that already exists. If you
 # could mutate sample_rate after recording, the same bytes would suddenly
 # "mean" a different duration -- a whole class of bugs we make impossible.
-# Frozen also gives us __eq__ and __hash__, handy for comparing files.
+# (@dataclass already generates __eq__; frozen additionally makes
+# instances hashable, so they can be dict keys or set members.)
 @dataclass(frozen=True)
 class AudioFormat:
     sample_rate: int
@@ -73,10 +74,11 @@ class AudioFormat:
     @property
     def nyquist_hz(self) -> float:
         """The highest frequency this sample rate can represent: rate / 2.
-        To capture a wave you need at least two samples per cycle (one up,
-        one down). Anything above Nyquist is lost -- the OS/driver filters
-        it out before sampling, otherwise it would "alias" into a fake lower
-        tone. Speech intelligibility lives mostly below ~4 kHz, but consonants
+        To capture a wave you need *more than* two samples per cycle (at
+        least one per half-cycle). Anything above Nyquist can't be stored;
+        if it reached the sampler it would "alias" into a fake lower tone,
+        so an anti-aliasing low-pass filter removes it first -- in the
+        ADC/codec, or in the OS resampler when it converts rates for us. Speech intelligibility lives mostly below ~4 kHz, but consonants
         like "s"/"f" have energy up to ~8 kHz and beyond -- which is exactly
         why 8 kHz telephone audio sounds muffled and 16 kHz is the usual
         STT default."""
@@ -85,9 +87,10 @@ class AudioFormat:
     def frames_per_block(self, block_ms: int) -> int:
         """How many frames fit in one block of `block_ms` milliseconds.
 
-        Integer math (multiply first, then floor-divide) instead of
-        `rate * block_ms / 1000` so we never get float artifacts like
-        319.99999 -- block sizes must be exact whole numbers of frames.
+        Floor division because a block must be a whole number of frames
+        (PortAudio's blocksize is an int) and some combinations don't divide
+        evenly: 11025 Hz x 20 ms = 220.5 -> 220 frames (~19.95 ms). `//`
+        keeps the result an int and makes the rounding explicit.
         """
         return self.sample_rate * block_ms // 1000
 
