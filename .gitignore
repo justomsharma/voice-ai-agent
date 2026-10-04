@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.superpowers/
+# Recordings are personal (your voice) and regenerable; don't commit them.
+01_audio/recordings/

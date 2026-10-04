@@ -1,0 +1,9 @@
+# Only used to configure pytest. This repo is a set of learning stages run as
+# plain scripts, not an installable package, so there is no [project] table.
+[tool.pytest.ini_options]
+# Folders like "01_audio" start with a digit, so they can't be imported as
+# Python packages. Putting the folder itself on sys.path lets tests do
+# `from audio_format import AudioFormat`, exactly like the scripts do when
+# you run `python 01_audio/record.py`.
+pythonpath = ["01_audio"]
+testpaths = ["01_audio/tests"]
