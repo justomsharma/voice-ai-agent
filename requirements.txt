@@ -1,0 +1,6 @@
+# Minimum versions known to work (tested with Python 3.14 on Windows 11).
+# sounddevice ships its own PortAudio DLL on Windows, so no system install needed.
+sounddevice>=0.5
+numpy>=2.0
+matplotlib>=3.9
+pytest>=8
