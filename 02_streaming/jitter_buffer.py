@@ -64,6 +64,7 @@ class JitterBuffer:
         self._next_seq: int | None = None  # None while pre-rolling
         self.highest_seq: int | None = None
         self._missed: list[int] = []
+        self.late_seqs: set[int] = set()
         self.received = self.late = self.duplicate = self.reordered = self.played = 0
 
     @property
@@ -77,18 +78,24 @@ class JitterBuffer:
         return len(self._held)
 
     def push(self, seq: int, payload: bytes, send_time_ns: int) -> str:
+        if seq in self._held:
+            self.duplicate += 1
+            return "duplicate"
+        if self.highest_seq is not None and seq < self.highest_seq:
+            # A later packet overtook this one. Counted before the "late"
+            # check: reordering is what the network did, whether or not the
+            # packet still makes it in time.
+            self.reordered += 1
+        # Every arrival counts toward "newest seen", late ones included,
+        # otherwise reordering between two late packets would go unnoticed.
+        self.highest_seq = seq if self.highest_seq is None else max(self.highest_seq, seq)
         if self._next_seq is not None and seq < self._next_seq:
             # Its slot has already been played (as silence). Playing it now
             # would put the audio out of order, so drop it.
             self.late += 1
+            self.late_seqs.add(seq)
             return "late"
-        if seq in self._held:
-            self.duplicate += 1
-            return "duplicate"
         self.received += 1
-        if self.highest_seq is not None and seq < self.highest_seq:
-            self.reordered += 1  # a later packet overtook this one
-        self.highest_seq = seq if self.highest_seq is None else max(self.highest_seq, seq)
         self._held[seq] = (payload, send_time_ns)
         # Pre-roll: start only once enough is held. target 0 still needs one
         # packet; there's nothing to play before that.

@@ -71,3 +71,30 @@ def test_end_of_stream_not_missed():
 def test_negative_target_rejected():
     with pytest.raises(ValueError):
         JitterBuffer(-1)
+
+
+def test_reorder_counted_even_when_packet_is_late():
+    # Reordering is something the *network* did; it must be counted whether
+    # or not the packet still makes it in time.
+    jb = JitterBuffer(0)
+    push(jb, 5)
+    assert push(jb, 3) == ["late"]
+    assert jb.reordered == 1
+
+
+def test_late_seqs_are_recorded():
+    # The receiver needs to know *which* slots were silent because of a late
+    # packet vs. a lost one, so it can't just keep a count.
+    jb = JitterBuffer(0)
+    push(jb, 5)
+    push(jb, 3)
+    assert jb.late_seqs == {3}
+
+
+def test_reorder_between_two_late_packets_counted():
+    jb = JitterBuffer(0)
+    push(jb, 5)
+    for _ in range(3):  # play 5, then slots 6 and 7 pass empty
+        jb.pop()
+    push(jb, 7, 6)  # both late; 6 arrived after 7, so it was reordered too
+    assert jb.late == 2 and jb.reordered == 1
