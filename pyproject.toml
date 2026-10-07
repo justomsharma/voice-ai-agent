@@ -5,5 +5,5 @@
 # Python packages. Putting the folder itself on sys.path lets tests do
 # `from audio_format import AudioFormat`, exactly like the scripts do when
 # you run `python 01_audio/record.py`.
-pythonpath = ["01_audio"]
-testpaths = ["01_audio/tests"]
+pythonpath = ["01_audio", "02_streaming"]
+testpaths = ["01_audio/tests", "02_streaming/tests"]

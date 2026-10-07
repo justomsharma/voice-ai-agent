@@ -4,3 +4,4 @@ __pycache__/
 .superpowers/
 # Recordings are personal (your voice) and regenerable; don't commit them.
 01_audio/recordings/
+02_streaming/recordings/
