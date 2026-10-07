@@ -177,10 +177,11 @@ def main(argv: list[str] | None = None) -> int:
             send_errors += 1
 
     line = DelayLine(send)
-    per_second = max(1, 1000 // args.frame_ms)
+    per_second = max(1, round(1000 / args.frame_ms))  # for the once-a-second progress line
     print(f"Source: {args.wav or 'microphone'}  {fmt.sample_rate} Hz, {fmt.channels} ch")
     print(f"Frame:  {args.frame_ms} ms = {n} frames = {payload} B of PCM + {HEADER_SIZE} B header"
-          f"  ({per_second} packets/s, {(payload + HEADER_SIZE) * per_second * 8 / 1000:.0f} kbit/s)")
+          f"  ({1000 / args.frame_ms:.3g} packets/s, "
+          f"{(payload + HEADER_SIZE) * 8 / args.frame_ms:.0f} kbit/s)")
     print(f"Network: delay {args.delay_ms:g} ms, jitter +/-{args.jitter_ms:g} ms, "
           f"loss {args.loss:.0%}  -> udp://{args.host}:{args.port}\n")
 

@@ -16,10 +16,13 @@ so everything it needs to know has to be inside them:
     18      ...   pcm            int16 little-endian samples, interleaved.
 
 This is a simplified RTP header (RFC 3550), the format real VoIP and WebRTC
-calls use. RTP also carries a sequence number and a timestamp. It doesn't
-put the format in every packet: a "payload type" number refers to a format
-agreed during call setup, which saves bytes. We spend 6 extra bytes per
-packet to keep things self-explanatory.
+calls use. RTP also carries a sequence number, but its timestamp is
+different from ours: it counts *samples* (+320 per 20 ms frame at 16 kHz),
+not wall-clock time, so it says where the audio belongs in the stream
+but can't measure one-way delay. RTP also doesn't put the format in every
+packet: a "payload type" number refers to a format agreed during call
+setup, which saves bytes. We spend 6 extra bytes per packet to keep things
+self-explanatory.
 """
 
 import struct

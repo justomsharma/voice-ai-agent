@@ -21,6 +21,11 @@ mic or .wav                                      UDP socket
 | `sender.py` | mic / wav → packets → bad network → UDP |
 | `receiver.py` | UDP → jitter buffer → speaker, and prints what went wrong |
 
+> **Vocabulary shift.** In 01_audio a *frame* was one instant of audio and
+> 20 ms of them was a *block*. Voice/VoIP people call that 20 ms block a
+> **frame**, and so does this stage. "320 frames" in the output still means
+> 320 instants (samples, for mono).
+
 ## Four words
 
 | Word | What happens | What you hear |
@@ -101,6 +106,11 @@ away, because they arrived after their moment. The packets weren't lost;
 they were *late*. 80 ms of buffer fixes everything. 200 ms fixes nothing
 more and just adds delay.
 
+(Strictly, "0 ms" still waits for one packet, so 0 and 20 behave the same.
+A buffer of N frames adds about N−1 frames of waiting plus up to one frame
+for wherever the speaker's tick happens to fall. That's why the live stats
+line shows "2 fr (40 ms)" in the buffer at 60 ms.)
+
 Why 80? The network delay ranged from 41 to 120 ms, a spread of about 80 ms.
 The buffer has to cover that spread. **The right buffer size = how much the
 delay varies, not how big it is.** Row 2 has a huge delay and no variation,
@@ -147,8 +157,9 @@ before TTS or a whole audio clip before STT.
 TCP guarantees every byte arrives in order. When a packet is lost it
 re-sends it and **holds back everything after it** until the gap is filled
 ("head-of-line blocking"). That's perfect for downloading a file, and
-terrible for live audio: one lost packet freezes the stream for a full
-round-trip. UDP just sends; the receiver decides what to do about gaps
+terrible for live audio: one lost packet freezes the stream for at least a
+round-trip, and much longer (200 ms+) if TCP has to wait for its
+retransmission timer. UDP just sends; the receiver decides what to do about gaps
 (here: play silence and move on). That's why RTP/WebRTC audio runs over
 UDP.
 
@@ -162,8 +173,9 @@ bad ones.)
   needs no flags to match the sender. Real RTP sends a 1-byte "payload type"
   instead, and agrees the format during call setup.
 - **The sound card drives playout.** The speaker's callback pulls one frame
-  every 20 ms. It's the steadiest clock in the system and the one that
-  actually consumes audio.
+  per 20 ms *on average*. The OS may call it in small bursts to keep its own
+  output buffer full, but over time it's the one clock that consumes audio
+  at exactly the real rate.
 - **Speaker warm-up.** On Windows the speaker asks for its first frame about
   55–80 ms after it opens. Packets arriving before that would pile up and
   quietly make the buffer bigger than `--buffer-ms`, so the receiver drops
@@ -174,7 +186,9 @@ bad ones.)
 - **Delay is measured with one clock.** Sender and receiver are on the same
   machine, so `arrival − send_time` is meaningful. Across two machines it
   isn't (their clocks disagree by more than the delay). Real systems
-  estimate jitter from the *differences* between arrival gaps (RFC 3550).
+  estimate jitter by comparing the spacing of arrivals with the spacing of
+  RTP timestamps (RFC 3550): if two packets 20 ms apart in the audio arrive
+  35 ms apart, that's 15 ms of jitter, with no shared clock needed.
 - **Bad network on the send side.** That's simpler than a relay process in
   the middle, and the receiver can't tell the difference.
 
@@ -192,6 +206,7 @@ bad ones.)
 2. Find the smallest `--buffer-ms` that gives 0% silence for
    `--jitter-ms 20`, then for `--jitter-ms 60`.
 3. `--loss 0.2`: at what loss rate does speech stop being understandable?
-4. Stream `take_48000hz.wav`: same frames per second, 3× the bytes.
+4. Stream `take_48000hz.wav`: same packets per second, 3× the samples and
+   bytes in each one.
 5. Start the sender without a receiver. Nothing breaks: UDP doesn't know
    or care whether anyone is listening.

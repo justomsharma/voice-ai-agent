@@ -12,8 +12,9 @@ Two clocks, two threads
 -----------------------
     network thread   packets arrive whenever the network delivers them
                      -> jitter_buffer.push()
-    speaker thread   the sound card asks for exactly one frame every 20 ms,
-                     steady as a metronome -> jitter_buffer.pop()
+    speaker thread   the sound card asks for one frame per 20 ms, steady on
+                     average (the OS may call in small bursts to keep its
+                     own output buffer full) -> jitter_buffer.pop()
 
 The jitter buffer sits between the uneven clock and the steady one. We let
 the *sound card* drive playout (its callback pulls frames) instead of a
@@ -110,6 +111,14 @@ class Receiver:
                 # clocks differ by more than the delay we're measuring.
                 self.net_delays_ms.append((arrival_ns - pkt.send_time_ns) / 1e6)
 
+    def should_stop(self, now: float) -> bool:
+        """Call with the lock held. The stream is over once nothing has
+        arrived for IDLE_STOP_S and the buffer has played out, or if the
+        buffer never filled at all (stream shorter than --buffer-ms), since
+        then there's nothing left that will ever play."""
+        idle = now - self.last_arrival > IDLE_STOP_S
+        return idle and (self.jb.depth == 0 or not self.jb.started)
+
     def playout(self, outdata: np.ndarray, frames: int, time_info, status: sd.CallbackFlags) -> None:
         # Sound card thread: same rules as the mic callback in 01_audio.
         # Be quick, never block for long, no printing.
@@ -126,6 +135,17 @@ class Receiver:
             outdata.fill(0)  # pre-roll or a missing frame: silence
         else:
             outdata[:] = np.frombuffer(frame.payload, dtype=PCM16).reshape(-1, self.fmt.channels)
+
+
+def check_output_device(device: int | str | None) -> str | None:
+    """Return an error message if `device` isn't a usable speaker. Checked
+    up front, so a typo fails now, not when the first packet arrives."""
+    try:
+        sd.query_devices(device, "output")
+    except (ValueError, sd.PortAudioError) as e:
+        return (f"no usable output device {device!r}: {e}\n"
+                "hint: python 01_audio/record.py --list-devices, then --device")
+    return None
 
 
 def recv_loop(sock: socket.socket, rx: Receiver, stop: threading.Event) -> None:
@@ -168,6 +188,9 @@ def summary(rx: Receiver, output_latency_ms: float) -> None:
     late = len(silent_seqs & (jb.late_seqs | rx.warmup_seqs))
     net, play = rx.net_delays_ms, rx.play_delays_ms
     print(f"\n--- summary (jitter buffer {rx.buffer_ms:g} ms = {jb.target_frames} frames) ---")
+    if not jb.started:
+        print(f"  nothing played: the stream ended before the buffer filled "
+              f"({jb.depth} of {jb.target_frames} frames held)")
     print(f"  frames in stream      {len(slots)}")
     print(f"  played                {len(slots) - silent}")
     print(f"  played as silence     {silent}  ({silent / max(1, len(slots)):.1%})"
@@ -206,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.buffer_ms < 0:
         print("error: --buffer-ms must be >= 0", file=sys.stderr)
         return 1
+    if (err := check_output_device(args.device)) is not None:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.bind((args.host, args.port))
@@ -240,14 +266,20 @@ def main(argv: list[str] | None = None) -> int:
             start, net_from, play_from = time.monotonic(), 0, 0
             while True:
                 time.sleep(1.0)
+                # Build the line under the lock but print it *after*
+                # releasing it: printing can block (on Windows, clicking in
+                # the console pauses output), and the sound card's callback
+                # must never wait on us.
                 with rx.lock:
-                    print(stats_line(rx, time.monotonic() - start, net_from, play_from))
+                    line = stats_line(rx, time.monotonic() - start, net_from, play_from)
                     net_from, play_from = len(rx.net_delays_ms), len(rx.play_delays_ms)
-                    if time.monotonic() - rx.last_arrival > IDLE_STOP_S and rx.jb.depth == 0:
-                        break
+                    done = rx.should_stop(time.monotonic())
+                print(line)
+                if done:
+                    break
     except KeyboardInterrupt:
         print("\nStopped.")
-    except sd.PortAudioError as e:
+    except (sd.PortAudioError, ValueError) as e:
         print(f"error: can't open the speaker: {e}", file=sys.stderr)
         return 1
     finally:
