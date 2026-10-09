@@ -11,7 +11,7 @@ hand first so it's clear what those frameworks do for you.
 |---|---|---|---|
 | 01 | [01_audio](01_audio/) | PCM, sample rate, bit depth, frames, blocks, latency floor | ✅ |
 | 02 | [02_streaming](02_streaming/) | UDP packets, delay, jitter, loss, jitter buffers | ✅ |
-| 03 | [03_vad](03_vad/) | Voice activity detection | — |
+| 03 | [03_vad](03_vad/) | Voice activity detection: RMS energy, thresholds, hysteresis, VAD vs turn detection | ✅ |
 | 04 | [04_stt](04_stt/) | Speech-to-text | — |
 | 05 | [05_llm](05_llm/) | Language model reply | — |
 | 06 | [06_tts](06_tts/) | Text-to-speech | — |
@@ -42,6 +42,9 @@ there's nothing else to install. On Linux, run `apt install libportaudio2`.
 # 02: two terminals
 .venv/Scripts/python 02_streaming/receiver.py
 .venv/Scripts/python 02_streaming/sender.py --wav 01_audio/recordings/take_16000hz.wav --jitter-ms 40 --delay-ms 80
+
+# 03: find the speech
+.venv/Scripts/python 03_vad/detect.py --wav 01_audio/recordings/take_16000hz.wav --plot
 ```
 
-Start with [01_audio/README.md](01_audio/README.md), then [02_streaming/README.md](02_streaming/README.md).
+Start with [01_audio/README.md](01_audio/README.md), then [02_streaming/README.md](02_streaming/README.md), then [03_vad/README.md](03_vad/README.md).
