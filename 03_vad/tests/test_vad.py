@@ -112,3 +112,12 @@ def test_live_properties():
 def test_bad_config_rejected(bad):
     with pytest.raises(ValueError):
         VadConfig(**bad)
+
+
+def test_short_last_frame_advances_clock_by_its_real_length():
+    vad = EnergyVad(VadConfig())
+    for _ in range(30):
+        vad.push(LOUD)
+    vad.push(LOUD, frame_s=0.01)  # a 10 ms leftover at the end of a file
+    assert vad.elapsed_s == pytest.approx(0.61)
+    assert [(s.start_s, s.end_s) for s in vad.flush()] == approx([Segment(0.0, 0.61)])

@@ -75,6 +75,7 @@ class EnergyVad:
         self.state = QUIET
         self.raw: list[bool] = []  # per-frame "db >= start_db", for showing the flicker
         self._index = 0            # frames pushed so far
+        self._elapsed_s = 0.0      # audio seen so far (the last frame may be short)
         self._first_loud = 0       # frame index where the current speech began
         self._last_loud = 0        # last frame index that was over stop_db
         self._count = 0            # frames in a row in STARTING / STOPPING
@@ -86,17 +87,23 @@ class EnergyVad:
 
     @property
     def elapsed_s(self) -> float:
-        return self._index * self._frame_s
+        return self._elapsed_s
 
     @property
     def speech_start_s(self) -> float:
         return max(self._prev_end_s, self._first_loud * self._frame_s - self._pad_s)
 
-    def push(self, db: float) -> list[Segment]:
-        """Feed one frame's loudness. Returns a segment if one just ended."""
+    def push(self, db: float, frame_s: float | None = None) -> list[Segment]:
+        """Feed one frame's loudness. Returns a segment if one just ended.
+
+        `frame_s` is this frame's real length. Leave it out for a full frame;
+        pass it for the short leftover at the end of a file, so the clock
+        (and the last segment's end) doesn't run past the real audio.
+        """
         c = self.config
         i = self._index
         self._index += 1
+        self._elapsed_s += self._frame_s if frame_s is None else frame_s
         self.raw.append(db >= c.start_db)
 
         if self.state == QUIET:

@@ -22,7 +22,7 @@ def silence(seconds: float, rate: int = 16000, channels: int = 1) -> np.ndarray:
 
 def run(samples, fmt=FMT, config=VadConfig()):
     return analyze(split_frames(samples, fmt.frames_per_block(config.frame_ms)),
-                   fmt.channels, config)
+                   fmt, config)
 
 
 def test_split_frames_keeps_short_last_frame():
@@ -62,7 +62,7 @@ def test_analyze_empty():
 def test_analyze_logs_start_and_end():
     lines = []
     analyze(split_frames(np.concatenate([silence(1), tone(1), silence(1)]), 320),
-            1, VadConfig(), log=lines.append)
+            FMT, VadConfig(), log=lines.append)
     assert len(lines) == 2
     assert "START" in lines[0] and "END" in lines[1]
 
@@ -202,3 +202,11 @@ def test_mic_open_failure_is_an_error_line(monkeypatch, capsys):
     monkeypatch.setattr(sd, "InputStream", broken)
     assert main(["--seconds", "1"]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+def test_analyze_partial_last_frame_keeps_true_end():
+    # 1.51 s of audio = 75 full 20 ms frames + one 10 ms leftover. Speech
+    # runs to the end, so the segment must end at 1.51 s, not 1.52 s.
+    a = run(np.concatenate([silence(0.5), tone(1.01)]))
+    assert [(s.start_s, s.end_s) for s in a.segments] == [
+        (pytest.approx(0.4), pytest.approx(1.51))]

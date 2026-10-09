@@ -53,7 +53,7 @@ def split_frames(samples: np.ndarray, n: int) -> Iterator[np.ndarray]:
         yield samples[off:off + n]
 
 
-def analyze(frames: Iterable[np.ndarray], channels: int, config: VadConfig,
+def analyze(frames: Iterable[np.ndarray], fmt: AudioFormat, config: VadConfig,
             log: Callable[[str], None] | None = None) -> Analysis:
     """Run the VAD over frames as they arrive (file or live mic alike).
 
@@ -71,7 +71,9 @@ def analyze(frames: Iterable[np.ndarray], channels: int, config: VadConfig,
         kept.append(frame)
         db = frame_dbfs(frame)
         dbs.append(db)
-        done = vad.push(db)
+        # Tell the VAD each frame's real length: the last one in a file
+        # is usually shorter than frame_ms.
+        done = vad.push(db, fmt.duration_seconds(len(frame)))
         segments += done
         if log:
             if vad.in_speech and not was_speaking:
@@ -84,7 +86,7 @@ def analyze(frames: Iterable[np.ndarray], channels: int, config: VadConfig,
         if log:
             log(f"[{vad.elapsed_s:6.2f}s] speech END    ({s.start_s:.2f}s - {s.end_s:.2f}s)"
                 "  <- audio ended")
-    samples = np.concatenate(kept) if kept else np.zeros((0, channels), np.int16)
+    samples = np.concatenate(kept) if kept else np.zeros((0, fmt.channels), np.int16)
     return Analysis(dbs, vad.raw, segments, samples)
 
 
@@ -269,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
           f"stop < {config.stop_db:g} dBFS | min speech {config.min_speech_ms} ms, "
           f"min silence {config.min_silence_ms} ms, pad {config.pad_ms} ms\n")
     try:
-        a = analyze(frames, fmt.channels, config, log=print)
+        a = analyze(frames, fmt, config, log=print)
     except (RuntimeError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
