@@ -112,3 +112,61 @@ def test_keep_speech():
 
 def test_keep_speech_nothing():
     assert keep_speech(FMT, silence(1), []).shape == (0, 1)
+
+
+from detect import format_timelines, main, make_figure  # noqa: E402
+from wav_io import read_wav, write_wav  # noqa: E402
+
+
+def test_main_wav_prints_and_writes_speech(tmp_path, capsys):
+    src, out = tmp_path / "in.wav", tmp_path / "speech.wav"
+    write_wav(src, FMT, np.concatenate([silence(1), tone(1), silence(1)]))
+    assert main(["--wav", str(src), "--out", str(out)]) == 0
+    text = capsys.readouterr().out
+    assert "1 speech segment" in text and "raw |" in text and "vad |" in text
+    fmt, kept = read_wav(out)
+    assert len(kept) == round(1.2 * 16000)  # 1 s tone + 2 x 100 ms padding
+
+
+def test_main_noise_flag(tmp_path, capsys):
+    src = tmp_path / "quiet.wav"
+    write_wav(src, FMT, silence(3))
+    assert main(["--wav", str(src)]) == 0
+    assert "\n0 speech segment" in capsys.readouterr().out
+    assert main(["--wav", str(src), "--noise", "-30"]) == 0
+    assert "\n0 speech segment" not in capsys.readouterr().out  # "\n" so "10 speech" can't match
+
+
+def test_main_out_with_no_speech_writes_nothing(tmp_path, capsys):
+    src, out = tmp_path / "quiet.wav", tmp_path / "speech.wav"
+    write_wav(src, FMT, silence(1))
+    assert main(["--wav", str(src), "--out", str(out)]) == 0
+    assert not out.exists()
+    assert "nothing written" in capsys.readouterr().out
+
+
+def test_main_bad_config(tmp_path, capsys):
+    src = tmp_path / "in.wav"
+    write_wav(src, FMT, silence(1))
+    assert main(["--wav", str(src), "--start-db", "-50", "--stop-db", "-40"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_main_missing_file(capsys):
+    assert main(["--wav", "does_not_exist.wav"]) == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_format_timelines_wraps_rows():
+    text = format_timelines("#" * 70, "." * 70)
+    lines = text.splitlines()
+    assert len(lines) == 4  # 2 rows x (raw, vad)
+    assert lines[2].lstrip().startswith("6.0s")
+
+
+def test_make_figure_smoke():
+    import matplotlib
+    matplotlib.use("Agg")  # no window, works without a display
+    a = run(np.concatenate([silence(1), tone(1), silence(1)]))
+    fig = make_figure(FMT, a, VadConfig())
+    assert len(fig.axes) == 2
