@@ -5,3 +5,4 @@ __pycache__/
 # Recordings are personal (your voice) and regenerable; don't commit them.
 01_audio/recordings/
 02_streaming/recordings/
+03_vad/recordings/
