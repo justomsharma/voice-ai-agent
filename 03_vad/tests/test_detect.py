@@ -170,3 +170,35 @@ def test_make_figure_smoke():
     a = run(np.concatenate([silence(1), tone(1), silence(1)]))
     fig = make_figure(FMT, a, VadConfig())
     assert len(fig.axes) == 2
+
+
+def test_main_rejects_frame_that_is_not_whole_samples(tmp_path, capsys):
+    # 11025 Hz x 20 ms = 220.5 samples: every frame would really be 19.95 ms,
+    # and all the printed times would drift. Refuse with a clear message.
+    src = tmp_path / "odd.wav"
+    write_wav(src, AudioFormat(11025, 1), np.zeros((11025, 1), np.int16))
+    assert main(["--wav", str(src)]) == 1
+    assert "220.5 samples" in capsys.readouterr().err
+    assert main(["--wav", str(src), "--frame-ms", "40"]) == 0  # 441 samples: fine
+
+
+def test_main_timeline_scale_matches_frame_ms(tmp_path, capsys):
+    # 30 ms frames: 3 frames per char = 90 ms, not 100 ms.
+    src = tmp_path / "long.wav"
+    write_wav(src, FMT, silence(8))
+    assert main(["--wav", str(src), "--frame-ms", "30"]) == 0
+    out = capsys.readouterr().out
+    assert "1 char = 90 ms" in out
+    assert "5.4s  raw |" in out  # second row starts at 60 chars x 90 ms
+
+
+def test_mic_open_failure_is_an_error_line(monkeypatch, capsys):
+    import sounddevice as sd
+
+    def broken(*a, **k):
+        raise sd.PortAudioError("device unavailable")
+
+    monkeypatch.setattr(sd, "check_input_settings", lambda **k: None)
+    monkeypatch.setattr(sd, "InputStream", broken)
+    assert main(["--seconds", "1"]) == 1
+    assert "error:" in capsys.readouterr().err

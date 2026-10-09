@@ -173,8 +173,15 @@ def mic_frames(args: argparse.Namespace, fmt: AudioFormat, n: int) -> Iterator[n
         def callback(indata, frames, time_info, status) -> None:
             blocks.put(indata.copy())  # audio thread: copy and enqueue only
 
-        with sd.InputStream(samplerate=fmt.sample_rate, channels=fmt.channels, dtype="int16",
-                            blocksize=n, device=args.device, callback=callback):
+        try:
+            stream = sd.InputStream(samplerate=fmt.sample_rate, channels=fmt.channels,
+                                    dtype="int16", blocksize=n, device=args.device,
+                                    callback=callback)
+        except sd.PortAudioError as e:
+            # E.g. the device is busy in another app. main() reports
+            # RuntimeError as one "error:" line instead of a traceback.
+            raise RuntimeError(f"couldn't open the mic: {e}") from e
+        with stream:
             got = 0
             try:
                 while got < total:
@@ -222,6 +229,19 @@ def make_figure(fmt: AudioFormat, a: Analysis, config: VadConfig):
     return fig
 
 
+def frame_samples(fmt: AudioFormat, frame_ms: int) -> int:
+    """Samples per frame, refusing frames that aren't a whole number of samples.
+
+    The VAD counts time as frames x frame_ms. At 11025 Hz a 20 ms frame
+    would be 220.5 samples; we'd have to use 220 (19.95 ms), and every
+    timestamp would drift ~2.3 ms per second of audio without a word.
+    """
+    if fmt.sample_rate * frame_ms % 1000:
+        raise ValueError(f"{frame_ms} ms is {fmt.sample_rate * frame_ms / 1000:g} samples at "
+                         f"{fmt.sample_rate} Hz; pick a --frame-ms that gives whole samples")
+    return fmt.frames_per_block(frame_ms)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
@@ -232,10 +252,10 @@ def main(argv: list[str] | None = None) -> int:
             fmt, samples = read_wav(args.wav)
             if args.noise is not None:
                 samples = add_noise(samples, args.noise, rng)
-            frames = split_frames(samples, fmt.frames_per_block(config.frame_ms))
+            frames = split_frames(samples, frame_samples(fmt, config.frame_ms))
         else:
             fmt = AudioFormat(args.rate, args.channels)
-            frames = mic_frames(args, fmt, fmt.frames_per_block(config.frame_ms))
+            frames = mic_frames(args, fmt, frame_samples(fmt, config.frame_ms))
             if args.noise is not None:
                 frames = (add_noise(f, args.noise, rng) for f in frames)
     except (ValueError, OSError) as e:
@@ -261,8 +281,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {s.start_s:6.2f}s - {s.end_s:6.2f}s  ({s.end_s - s.start_s:.2f} s)")
 
     vad_flags = segments_to_flags(a.segments, len(a.dbs), config.frame_ms)
-    print(f"\nTimeline: 1 char = {CHAR_MS} ms   # speech   + flicker   . silence")
-    print(format_timelines(timeline(a.raw, config.frame_ms), timeline(vad_flags, config.frame_ms)))
+    # A char holds whole frames, so with 30 ms frames it's 3 x 30 = 90 ms.
+    char_ms = max(1, round(CHAR_MS / config.frame_ms)) * config.frame_ms
+    print(f"\nTimeline: 1 char = {char_ms} ms   # speech   + flicker   . silence")
+    print(format_timelines(timeline(a.raw, config.frame_ms, char_ms),
+                           timeline(vad_flags, config.frame_ms, char_ms), char_ms))
 
     if args.out:
         if a.segments:
