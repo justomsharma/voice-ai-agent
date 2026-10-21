@@ -46,7 +46,8 @@ def test_openai_request_and_response():
 
 
 def test_openai_languages_as_objects():
-    post = FakePost(reply(200, {"text": "x", "languages": [{"language": "hi"}, {"language": "en"}]}))
+    # The real API (first live run, 2026-10-21) returns [{"code": "en"}].
+    post = FakePost(reply(200, {"text": "x", "languages": [{"code": "hi"}, {"code": "en"}]}))
     assert OpenAIBatch(key="k", post=post).transcribe(prepared()).language == "hi, en"
 
 

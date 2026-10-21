@@ -95,7 +95,8 @@ class OpenAIBatch:
         if not isinstance(text, str):
             raise SttError("bad_response", f"no 'text' in response: {list(data)}")
         languages = data.get("languages") or []
-        language = ", ".join(str(x.get("language", x)) if isinstance(x, dict) else str(x)
+        # Real responses look like [{"code": "en"}]; accept plain strings too.
+        language = ", ".join(str(x.get("code") or x.get("language") or x) if isinstance(x, dict) else str(x)
                              for x in languages) or None
         extra = {"usage": data["usage"]} if "usage" in data else {}
         return Transcript(text.strip(), self.name, self.model, audio.seconds, resp.timings,
