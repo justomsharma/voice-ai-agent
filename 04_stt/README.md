@@ -218,6 +218,7 @@ per-file WERs would let a 2-word clip count as much as a 200-word one.
 | Socket drops mid-stream | error line, then the summary with whatever text arrived |
 | Final never arrives | waits `--final-timeout` (10 s), then `NO FINAL (late or lost)` and exit code 1 |
 | evaluate: auth / quota error | stops calling that provider instead of failing 50 more times |
+| evaluate: any failed file | counted as every word missed, so a provider can't look better by failing on hard files |
 
 ## Why OpenAI (and Deepgram second)?
 

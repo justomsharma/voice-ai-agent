@@ -47,8 +47,8 @@ KEY_VAR = "OPENAI_API_KEY"
 CONTRACT = AudioContract(sample_rate=24000, channels=1)
 DELAYS = ("minimal", "low", "medium", "high", "xhigh")
 
-READY, COMMITTED, PARTIAL, FINAL, ERROR, CLOSED, OTHER = (
-    "ready", "committed", "partial", "final", "error", "closed", "other")
+READY, COMMITTED, CLEARED, PARTIAL, FINAL, ERROR, CLOSED, OTHER = (
+    "ready", "committed", "cleared", "partial", "final", "error", "closed", "other")
 
 
 # ---------------------------------------------------------------- events we send
@@ -101,6 +101,8 @@ def parse_event(event: dict, at: float = 0.0) -> Update:
         return Update(READY, at=at, raw_type=t)
     if t == "input_audio_buffer.committed":
         return Update(COMMITTED, item, at=at, raw_type=t)
+    if t == "input_audio_buffer.cleared":
+        return Update(CLEARED, at=at, raw_type=t)
     if t == "conversation.item.input_audio_transcription.delta":
         return Update(PARTIAL, item, event.get("delta", ""), at, t)
     if t == "conversation.item.input_audio_transcription.completed":
@@ -148,7 +150,17 @@ class RealtimeSession:
         try:
             self._ws = self._connect(self.url, {"Authorization": f"Bearer {key}"}, timeout)
         except Exception as e:  # handshake refused, DNS, TLS, timeout...
-            raise _connect_error(e) from e
+            # Some libraries quote the bad header in their message: never show the key.
+            raise _connect_error(e, secret=key) from None
+        try:
+            self._configure(t0, timeout)
+        except BaseException:
+            self.close()  # don't leave a half-open socket behind
+            raise
+        threading.Thread(target=self._reader, daemon=True).start()
+        return self._clock() - t0
+
+    def _configure(self, t0: float, timeout: float) -> None:
         self.send(self.config)
         deadline = t0 + timeout
         while True:
@@ -164,9 +176,7 @@ class RealtimeSession:
             if update.kind == ERROR:
                 raise SttError("bad_request", f"session rejected: {update.text}")
             if update.kind == READY:
-                break
-        threading.Thread(target=self._reader, daemon=True).start()
-        return self._clock() - t0
+                return
 
     def _reader(self) -> None:
         while True:
@@ -219,7 +229,10 @@ class RealtimeSession:
                 pass
 
 
-def _connect_error(e: Exception) -> SttError:
+def _connect_error(e: Exception, secret: str = "") -> SttError:
+    detail = f"{type(e).__name__}: {e}"
+    if secret:
+        detail = detail.replace(secret, "***")
     status = getattr(getattr(e, "response", None), "status_code", None)  # websockets InvalidStatus
     if status in (401, 403):
         return SttError("auth", "key rejected during WebSocket handshake", status=status)
@@ -227,10 +240,10 @@ def _connect_error(e: Exception) -> SttError:
         return SttError("rate_limit", "too many connections / no quota", status=status)
     if status is not None:
         return SttError("server" if status >= 500 else "bad_request",
-                        f"handshake refused: {e}", retryable=status >= 500, status=status)
+                        f"handshake refused: {detail}", retryable=status >= 500, status=status)
     if isinstance(e, TimeoutError):
         return SttError("timeout", "WebSocket handshake timed out", retryable=True)
-    return SttError("network", f"can't connect: {type(e).__name__}: {e}", retryable=True)
+    return SttError("network", f"can't connect: {detail}", retryable=True)
 
 
 # ---------------------------------------------------------------- partial vs final
@@ -269,6 +282,12 @@ class Board:
     """
     turns: list[Turn] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Ids of cleared false starts: their late partials must not land on a real turn.
+    ignored: set = field(default_factory=set)
+    # After a clear, until the server confirms it, a NEW id could be the
+    # click's or the next turn's. We can't tell, so we skip those partials.
+    # (Committed events are still safe: they come from OUR commits, in order.)
+    clearing: bool = False
 
     def start_turn(self, at: float) -> Turn:
         turn = Turn(len(self.turns) + 1, first_audio_at=at)
@@ -278,7 +297,10 @@ class Board:
     def drop_last(self) -> None:
         """A false start (a click the VAD rejected): forget the turn."""
         if self.turns and self.turns[-1].commit_at is None:
-            self.turns.pop()
+            dropped = self.turns.pop()
+            if dropped.item_id is not None:
+                self.ignored.add(dropped.item_id)
+            self.clearing = True
 
     def committed(self, at: float, last_loud_at: float | None,
                   speech: tuple[float, float] | None) -> None:
@@ -287,6 +309,9 @@ class Board:
 
     def apply(self, u: Update) -> Turn | None:
         """Route a server update to its turn. Returns that turn, if any."""
+        if u.kind == CLEARED:
+            self.clearing = False
+            return None
         if u.kind == ERROR and u.item_id is None:
             self.errors.append(u.text)
             return None
@@ -309,11 +334,20 @@ class Board:
         return turn
 
     def _turn_for(self, u: Update) -> Turn | None:
+        if u.item_id in self.ignored:
+            if u.kind != COMMITTED:
+                return None
+            # We never commit a cleared click, so a commit proves the id is real.
+            self.ignored.discard(u.item_id)
         for turn in self.turns:
             if u.item_id is not None and turn.item_id == u.item_id:
                 return turn
         # Unknown id: the server's commits come back in the order we sent
         # them, so it belongs to the oldest turn that has no id yet.
+        if self.clearing and u.kind != COMMITTED:
+            if u.item_id is not None:
+                self.ignored.add(u.item_id)  # most likely the click's
+            return None
         for turn in self.turns:
             if turn.item_id is None and (u.kind != COMMITTED or turn.commit_at is not None):
                 turn.item_id = u.item_id

@@ -84,6 +84,7 @@ def evaluate(pairs: list[tuple[Path, str]], providers: list[BatchProvider], vad:
             rows.append(row)
             if p.name in dead:
                 row.error = dead[p.name]
+                row.score = wer(reference, "")
                 continue
             try:
                 audio = prepare(fmt, samples, p.contract)
@@ -95,7 +96,12 @@ def evaluate(pairs: list[tuple[Path, str]], providers: list[BatchProvider], vad:
                 continue
             except SttError as e:
                 row.error = f"{e.kind}: {e}"
-                if e.kind in ("auth", "rate_limit"):  # it'll fail the same way for every file
+                # Count it as every word missed. Dropping it would shrink this
+                # provider's denominator: failing on the hard files would look
+                # like being accurate.
+                row.score = wer(reference, "")
+                # A bad key or no credit fails every file the same way: stop calling.
+                if e.kind == "auth" or (e.kind == "rate_limit" and not e.retryable):
                     dead[p.name] = f"skipped after {e.kind} error"
                 continue
             row.text, row.request_s = t.text, t.timings.total_s
@@ -140,10 +146,14 @@ def report(rows: list[Row], providers: list[str], verbose: bool = False) -> str:
         lat = (f"request median {np.median(times) * 1000:.0f} ms, p90 {np.percentile(times, 90) * 1000:.0f} ms, "
                f"RTF {sum(times) / audio:.2f}" if times else "no successful requests")
         failed = sum(r.error is not None for r in mine)
-        lines.append(f"  {p:<10} WER {s.rate:6.1%}  S={s.sub} D={s.dele} I={s.ins} of {s.ref_len} words"
+        if failed and times:
+            lat += f"   ({failed} failed, counted as all words missed)"
+            failed = 0
+        rate = f"{s.rate:6.1%}" if times else "   n/a"
+        lines.append(f"  {p:<10} WER {rate}  S={s.sub} D={s.dele} I={s.ins} of {s.ref_len} words"
                      f"   {lat}" + (f"   {failed} failed" if failed else ""))
         cats = sorted({r.category for r in mine})
-        if len(cats) > 1:
+        if len(cats) > 1 and times:
             lines.append("             " + "  ".join(
                 f"{c} {total([r for r in mine if r.category == c]).rate:.1%}" for c in cats))
 

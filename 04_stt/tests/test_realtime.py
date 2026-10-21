@@ -256,3 +256,50 @@ def test_board_drop_last_only_uncommitted():
 
 def test_board_ignores_updates_with_no_turn():
     assert Board().apply(Update(FINAL, "x", "hello")) is None
+
+
+def test_connect_error_redacts_the_key():
+    def connect(url, headers, timeout):
+        raise ValueError(f"invalid Authorization header: {headers['Authorization']}")
+
+    with pytest.raises(SttError) as e:
+        RealtimeSession(key="sk-SECRET", connect=connect).open()
+    assert "SECRET" not in str(e.value) and "***" in str(e.value)
+
+
+def test_failed_setup_closes_the_socket():
+    ws = FakeWs(FakeServer([], reject="nope"))
+    with pytest.raises(SttError):
+        RealtimeSession(key="k", connect=connect_to(ws)).open()
+    assert ws.closed
+
+
+def test_board_late_partial_of_a_cleared_click_does_not_steal_the_next_turn():
+    from realtime import CLEARED
+    b = Board()
+    b.start_turn(at=0)
+    b.apply(Update(PARTIAL, "click", "m"))
+    b.drop_last()                              # gate sent clear
+    b.start_turn(at=1)                         # real speech starts
+    b.apply(Update(PARTIAL, "click", "mm"))    # late partial from the click
+    b.apply(Update(PARTIAL, "click2", "x"))    # unknown id before the clear is confirmed
+    b.apply(Update(CLEARED))
+    b.apply(Update(PARTIAL, "real", "book"))
+    b.committed(at=2, last_loud_at=None, speech=None)
+    b.apply(Update(COMMITTED, "real"))
+    b.apply(Update(FINAL, "real", "book a ticket"))
+    [t] = b.turns
+    assert (t.item_id, t.partial, t.final) == ("real", "book", "book a ticket")
+    assert b.pending() == []
+
+
+def test_board_without_cleared_event_still_gets_the_final():
+    b = Board()
+    b.start_turn(at=0)
+    b.drop_last()
+    b.start_turn(at=1)
+    b.apply(Update(PARTIAL, "real", "book"))   # skipped: can't tell whose it is
+    b.committed(at=2, last_loud_at=None, speech=None)
+    b.apply(Update(COMMITTED, "real"))
+    b.apply(Update(FINAL, "real", "book a ticket"))
+    assert b.turns[0].final == "book a ticket"

@@ -214,6 +214,8 @@ def run(frames: Iterator[np.ndarray], fmt: AudioFormat, session: RealtimeSession
                 alive = drain(timeout=0.1)
     except SttError as e:
         log(f"error: {e}")
+    except KeyboardInterrupt:  # still show what we got so far
+        log("\nStopped (Ctrl+C).")
     finally:
         session.close()
     log(summary(board, setup_s, session.bytes_sent, sent_s))

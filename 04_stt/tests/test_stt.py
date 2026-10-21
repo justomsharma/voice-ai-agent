@@ -129,3 +129,10 @@ def test_fake_provider_records_and_fails_on_demand():
     with pytest.raises(SttError):
         bad.transcribe(audio)
     assert FakeProvider(contract=AudioContract(8000)).contract.sample_rate == 8000
+
+
+def test_api_key_is_stripped_and_validated_without_echo(tmp_path):
+    assert api_key("K", env={"K": "  sk-abc\n"}, env_file=tmp_path / "x") == "sk-abc"
+    with pytest.raises(SttError) as e:
+        api_key("K", env={"K": "sk-ab c"}, env_file=tmp_path / "x")
+    assert e.value.kind == "auth" and "sk-ab" not in str(e.value)

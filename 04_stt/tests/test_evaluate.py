@@ -91,3 +91,29 @@ def test_bad_folder(tmp_path, capsys):
     assert code == 1 and "not a folder" in capsys.readouterr().err
     code = main([str(tmp_path)], make=lambda *a, **k: None)
     assert code == 1 and "no X.wav + X.txt pairs" in capsys.readouterr().err
+
+
+def test_failed_files_count_as_all_missed(folder, capsys, monkeypatch):
+    monkeypatch.setattr("stt.time.sleep", lambda s: None)
+    class FailsOnNames(ByFile):
+        def transcribe(self, audio):
+            if round(audio.seconds) == 2:
+                raise SttError("server", "boom", retryable=True)
+            return super().transcribe(audio)
+
+    p = FailsOnNames("openai", {1: "book a ticket"})
+    code, out = run([folder], [p], capsys)
+    # 0 errors on 3 words + 4 missed words = 4/7, not 0/3 = 0%
+    assert code == 1 and "WER  57.1%" in out and "counted as all words missed" in out
+
+
+def test_everything_failed_shows_na(folder, capsys):
+    _, out = run([folder], [ByFile("openai", {}, error=SttError("network", "down"))], capsys)
+    assert "WER    n/a" in out
+
+
+def test_temporary_429_does_not_stop_the_provider(folder, capsys, monkeypatch):
+    monkeypatch.setattr("stt.time.sleep", lambda s: None)  # skip the backoff waits
+    p = ByFile("openai", {}, error=SttError("rate_limit", "slow down", retryable=True))
+    run([folder], [p], capsys)
+    assert len(p.received) == 2 * 3  # every file tried, each with 2 retries

@@ -125,10 +125,16 @@ def load_env_file(path: Path = ENV_FILE) -> dict[str, str]:
 def api_key(var: str, env: dict | None = None, env_file: Path = ENV_FILE) -> str:
     """Read a key from the environment, else from .env. Never printed or logged."""
     env = os.environ if env is None else env
-    value = env.get(var) or load_env_file(env_file).get(var)
+    value = (env.get(var) or load_env_file(env_file).get(var) or "").strip()
     if not value:
         raise SttError("auth", f"{var} is not set. Copy .env.example to .env and paste "
                                "your key there (or set the environment variable).")
+    # A stray newline or quote from copy-paste would make the HTTP library
+    # raise an error that QUOTES the header, key included. Refuse it here,
+    # without ever echoing the value.
+    if not all(33 <= ord(c) <= 126 for c in value):
+        raise SttError("auth", f"{var} contains spaces, line breaks or non-ASCII characters; "
+                               "re-paste the key on one line")
     return value
 
 
@@ -170,6 +176,11 @@ def http_post(url: str, headers: dict[str, str], body: bytes, timeout: float) ->
         t4 = time.perf_counter()
     except (TimeoutError, socket.timeout) as e:
         raise SttError("timeout", f"no answer within {timeout:g} s", retryable=True) from e
+    except ValueError as e:
+        # http.client's "Invalid header value b'Bearer sk-...'" would print
+        # the key, so don't chain or repeat its message.
+        raise SttError("bad_request", "invalid request header (check the API key for "
+                                      "stray characters)") from None
     except (OSError, http.client.HTTPException) as e:
         # DNS failure, refused connection, Wi-Fi dropped mid-request, ...
         raise SttError("network", f"{type(e).__name__}: {e}", retryable=True) from e
@@ -214,9 +225,10 @@ def check_status(resp: HttpResponse) -> None:
 
 
 def with_retries(call: Callable[[], Transcript], retries: int = 2, base_wait: float = 0.5,
-                 sleep: Callable[[float], None] = time.sleep,
+                 sleep: Callable[[float], None] | None = None,
                  log: Callable[[str], None] | None = None) -> Transcript:
     """Retry only what can succeed next time, with exponential backoff."""
+    sleep = sleep or time.sleep  # looked up per call, so tests can patch it
     for attempt in range(retries + 1):
         try:
             result = call()

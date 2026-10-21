@@ -61,3 +61,9 @@ def test_silent_server_times_out():
         assert e.value.kind == "timeout" and e.value.retryable
     finally:
         s.close()
+
+
+def test_bad_header_never_shows_the_key(server):
+    with pytest.raises(SttError) as e:
+        http_post(server, {"Authorization": "Bearer sk-SECRET\n"}, b"", 5)
+    assert "SECRET" not in str(e.value) and e.value.__cause__ is None
