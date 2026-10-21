@@ -62,7 +62,7 @@ class FakeServer:
         elif t == "input_audio_buffer.append" and not self.spoke:
             self.spoke = True
             ws.push({"type": "conversation.item.input_audio_transcription.delta",
-                     "item_id": item, "delta": self.finals[self.turn].split()[0]})
+                     "item_id": item, "delta": (self.finals + ["(unscripted)"])[self.turn].split()[0]})
         elif t == "input_audio_buffer.clear":
             self.spoke = False
         elif t == "input_audio_buffer.commit":

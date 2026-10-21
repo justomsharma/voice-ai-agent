@@ -219,6 +219,7 @@ def run(frames: Iterator[np.ndarray], fmt: AudioFormat, session: RealtimeSession
                 alive = drain(timeout=0.1)
     except SttError as e:
         log(f"error: {e}")
+        drain()  # keep text that had already arrived before the connection broke
     except KeyboardInterrupt:  # still show what we got so far
         log("\nStopped (Ctrl+C).")
     finally:

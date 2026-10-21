@@ -128,10 +128,11 @@ def load_env_file(path: Path = ENV_FILE) -> dict[str, str]:
     return values
 
 
-def api_key(var: str, env: dict | None = None, env_file: Path = ENV_FILE) -> str:
+def api_key(var: str, env: dict | None = None, env_file: Path | None = None) -> str:
     """Read a key from the environment, else from .env. Never printed or logged."""
     env = os.environ if env is None else env
-    value = (env.get(var) or load_env_file(env_file).get(var) or "").strip()
+    # ENV_FILE is looked up now, not at import, so tests can point it elsewhere.
+    value = (env.get(var) or load_env_file(env_file or ENV_FILE).get(var) or "").strip()
     if not value:
         raise SttError("auth", f"{var} is not set. Copy .env.example to .env and paste "
                                "your key there (or set the environment variable).")
