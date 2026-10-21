@@ -28,8 +28,10 @@ spelling variants ("Pune" vs "Poona") and to Hindi/Hinglish, where
 "kya" / "kia" / "क्या" are all the same word.
 """
 
+import codecs
 import unicodedata
 from dataclasses import dataclass, field
+from pathlib import Path
 
 OK, SUB, DEL, INS = "ok", "S", "D", "I"
 
@@ -46,6 +48,15 @@ def normalize(text: str) -> str:
         else:
             out.append(ch)
     return " ".join("".join(out).split())
+
+
+def read_reference(path: str | Path) -> str:
+    """A reference transcript file. UTF-8 normally, but PowerShell's `echo > x.txt`
+    writes UTF-16, and Notepad may add a BOM, so accept those too."""
+    data = Path(path).read_bytes()
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return data.decode("utf-16").strip()
+    return data.decode("utf-8-sig").strip()
 
 
 @dataclass

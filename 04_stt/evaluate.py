@@ -36,7 +36,7 @@ from wav_io import read_wav  # noqa: E402
 from audio_prep import prepare  # noqa: E402
 from stt import PROVIDERS, BatchProvider, SttError, make_provider, with_retries  # noqa: E402
 from transcribe import vad_trim  # noqa: E402
-from wer import Score, format_alignment, wer  # noqa: E402
+from wer import Score, format_alignment, read_reference, wer  # noqa: E402
 
 
 @dataclass
@@ -57,7 +57,7 @@ def find_pairs(folder: Path) -> tuple[list[tuple[Path, str]], list[Path]]:
     for wav in sorted(folder.glob("*.wav")):
         txt = wav.with_suffix(".txt")
         if txt.is_file():
-            pairs.append((wav, txt.read_text(encoding="utf-8").strip()))
+            pairs.append((wav, read_reference(txt)))
         else:
             missing.append(wav)
     return pairs, missing

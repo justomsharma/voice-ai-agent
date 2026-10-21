@@ -61,7 +61,8 @@ def test_compares_providers_with_corpus_wer(folder, capsys, tmp_path):
     assert "openai     WER   0.0%" in out
     assert "deepgram   WER  28.6%  S=1 D=1 I=0 of 7 words" in out
     assert "clean 33.3%  names 25.0%" in out
-    rows = list(csv.DictReader(open(tmp_path / "r.csv", encoding="utf-8")))
+    with open(tmp_path / "r.csv", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
     assert len(rows) == 4 and rows[1]["provider"] == "deepgram" and rows[1]["sub"] == "1"
 
 

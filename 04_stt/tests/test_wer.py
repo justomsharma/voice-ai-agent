@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from wer import Score, align, cer, format_alignment, normalize, summary, wer
+from wer import Score, align, cer, format_alignment, normalize, read_reference, summary, wer
 
 
 def test_normalize_case_and_punctuation():
@@ -71,3 +71,11 @@ def test_align_works_on_any_tokens():
 
 def test_summary_text():
     assert summary(Score(4, sub=1)) == "25.0%  (1 errors / 4 words: S=1 D=0 I=0)"
+
+
+def test_read_reference_any_common_encoding(tmp_path):
+    for i, (enc, text) in enumerate([("utf-8", "बुक करो\n"), ("utf-8-sig", "book it"),
+                                     ("utf-16", "book it\r\n")]):  # PowerShell echo >
+        f = tmp_path / f"{i}.txt"
+        f.write_bytes(text.encode(enc))
+        assert read_reference(f) == text.strip()

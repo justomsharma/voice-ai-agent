@@ -32,7 +32,7 @@ from wav_io import read_wav, write_wav  # noqa: E402
 
 from audio_prep import Prepared, prepare, wav_bytes  # noqa: E402
 from stt import PROVIDERS, BatchProvider, SttError, Transcript, make_provider, with_retries  # noqa: E402
-from wer import cer, format_alignment, summary, wer  # noqa: E402
+from wer import cer, format_alignment, read_reference, summary, wer  # noqa: E402
 
 HINTS = {
     "auth": "check the key in .env (copy .env.example) or your environment",
@@ -59,12 +59,12 @@ def vad_trim(fmt: AudioFormat, samples: np.ndarray) -> tuple[np.ndarray, int]:
     return keep_speech(fmt, a.samples, a.segments), len(a.segments)
 
 
-def read_reference(args: argparse.Namespace) -> str | None:
+def reference_for(args: argparse.Namespace) -> str | None:
     if args.ref is not None:
         return args.ref
     path = Path(args.ref_file) if args.ref_file else Path(args.wav).with_suffix(".txt")
     if args.ref_file or path.is_file():
-        return path.read_text(encoding="utf-8").strip()
+        return read_reference(path)
     return None
 
 
@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None,
         provider = make(args.provider, model=args.model, languages=args.language,
                         prompt=args.prompt, keywords=args.keyword, timeout=args.timeout)
         fmt, samples = read_wav(args.wav)
-        reference = read_reference(args)
+        reference = reference_for(args)
     except (ValueError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
