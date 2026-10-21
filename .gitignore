@@ -6,3 +6,7 @@ __pycache__/
 01_audio/recordings/
 02_streaming/recordings/
 03_vad/recordings/
+04_stt/recordings/
+04_stt/eval/
+# API keys. Copy .env.example to .env and fill it in; never commit it.
+.env

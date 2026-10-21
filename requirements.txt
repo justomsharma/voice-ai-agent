@@ -4,3 +4,5 @@ sounddevice>=0.5
 numpy>=2.0
 matplotlib>=3.9
 pytest>=8
+# 04_stt: WebSocket client for live transcription (sync API, no asyncio needed).
+websockets>=13
