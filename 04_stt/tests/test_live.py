@@ -104,7 +104,7 @@ def test_run_two_turns_partials_and_finals(two_turns_wav):
     assert t.speech == (pytest.approx(0.4), pytest.approx(1.6))
     assert t.first_audio_at <= t.first_text_at and t.last_loud_at <= t.commit_at <= t.final_at
     out = "\n".join(lines)
-    assert 'turn 1 partial  "book..."' in out and 'turn 1 FINAL    "book a ticket"' in out
+    assert 'turn 1 partial  "book ..."' in out and 'turn 1 FINAL    "book a ticket"' in out
     assert "Full transcript (finals only): book a ticket to pune please" in out
     sent = [e["type"] for e in ws.sent]
     assert sent.count("input_audio_buffer.commit") == 2 and ws.closed

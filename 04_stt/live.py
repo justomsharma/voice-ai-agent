@@ -120,7 +120,8 @@ def wav_frames(path: str, n_ms: int) -> tuple[AudioFormat, Iterator[np.ndarray]]
 def show(turn: Turn, kind: str, at: float) -> str:
     if kind == FINAL:
         return f"[{at:6.2f}s] turn {turn.number} FINAL    \"{turn.final}\""
-    return f"[{at:6.2f}s] turn {turn.number} partial  \"{turn.partial}...\""
+    # Deltas carry their own spacing (" Hello"), so trim for display only.
+    return f"[{at:6.2f}s] turn {turn.number} partial  \"{turn.partial.strip()} ...\""
 
 
 def committed(board: Board) -> list[Turn]:
