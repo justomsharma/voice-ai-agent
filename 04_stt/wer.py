@@ -24,8 +24,12 @@ benchmarks use bigger normalisers (Whisper's EnglishTextNormalizer) for
 exactly this.
 
 CER (character error rate) is the same idea on letters. It's kinder to
-spelling variants ("Pune" vs "Poona") and to Hindi/Hinglish, where
-"kya" / "kia" / "क्या" are all the same word.
+spelling variants in the SAME script: "Pune" vs "Poona", "kya" vs "kia".
+It can't help across scripts: "kya" vs "क्या" shares no letters, so it
+scores ~100%. Hinglish may come back romanised or in Devanagari, so write
+your reference in the script the model outputs (or transliterate one side
+first). Also, CER counts Unicode code points, and one Devanagari syllable
+like "क्या" is 4 of them (क ् य ा), so Hindi CER isn't comparable to English CER.
 """
 
 import codecs

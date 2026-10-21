@@ -178,3 +178,46 @@ def test_main_bad_wav(tmp_path, capsys):
     bad = tmp_path / "x.wav"
     bad.write_bytes(b"nope")
     assert main(["--wav", str(bad)], make_session=make_session(FakeWs())) == 1
+
+
+def test_gate_false_start_keeps_preroll_for_the_real_start():
+    # A soft onset dips once (a "k" gap) right after starting: the VAD falls
+    # back to QUIET and we clear. The real turn must still get its pre-roll.
+    gate = Gate(VadConfig(), preroll_ms=300)
+    frames = [np.full((480, 1), i, np.int16) for i in range(54)]
+    dbs = [QUIET] * 20 + [LOUD] * 3 + [QUIET] + [LOUD] * 30
+    sent: list[int] = []
+    for frame, db in zip(frames, dbs):
+        for a in gate.push(frame, db):
+            if a[0] == APPEND:
+                sent.append(int(a[1][0, 0]))
+            elif a[0] == CLEAR:
+                sent.clear()   # the server forgets everything since the last commit
+    # Restart at frame 24: the ring still holds the 16 frames before it,
+    # including the real onset at 20, so nothing of the word is lost.
+    assert sent == list(range(9, 54))
+
+
+def test_gate_never_resends_committed_audio():
+    gate = Gate(VadConfig(), preroll_ms=300)
+    dbs = [QUIET] * 20 + [LOUD] * 30 + [QUIET] * 25 + [LOUD] * 30 + [QUIET] * 30
+    sent = []
+    for i, db in enumerate(dbs):
+        frame = np.full((480, 1), i, np.int16)
+        sent += [int(a[1][0, 0]) for a in gate.push(frame, db) if a[0] == APPEND]
+    assert len(sent) == len(set(sent))  # no frame twice
+
+
+def test_main_bad_keyword_is_one_error_line(capsys):
+    assert main(["--dry-run", "-k", "<b>"]) == 1
+    assert "error: keyword" in capsys.readouterr().err
+
+
+def test_no_gate_hides_first_text_time(two_turns_wav):
+    ws = FakeWs(FakeServer(["one", "two"]))
+    fmt, frames = wav_frames(str(two_turns_wav), 20)
+    lines = []
+    run(frames, fmt, make_session(ws)(), Gate(VadConfig(), gated=False), paced=False,
+        final_timeout=2.0, log=lines.append)
+    row = next(line for line in lines[-1].splitlines() if line.strip().startswith("1 "))
+    assert row.split("s   ")[1].strip().startswith("-")

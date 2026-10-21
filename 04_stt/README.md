@@ -162,7 +162,7 @@ turn is over" (`commit`). So our energy VAD gets a real job:
 |---|---|---|
 | QUIET | keep the last 300 ms in a ring buffer, send nothing | don't pay to stream silence |
 | → STARTING | send the 300 ms **pre-roll** + this frame | the quiet start of the first word ("h"ello) is in the pre-roll, so it isn't cut off |
-| STARTING → QUIET | `input_audio_buffer.clear` | it was a click, so drop it server-side |
+| STARTING → QUIET | `input_audio_buffer.clear` | it was a click, so drop it server-side. The ring keeps rolling, so if real speech follows right away, its onset is re-sent |
 | SPEAKING / STOPPING | keep sending | short pauses stay inside the turn |
 | segment ends | `input_audio_buffer.commit` | the server finalises the turn |
 
@@ -199,8 +199,12 @@ Unicode-safe for Devanagari), so "Ticket." = "ticket". Not normalised:
 "10" vs "ten", "e-mail" vs "email". Keep your references written the way
 the model writes, or those differences count as errors.
 
-**CER** (characters) is gentler on spelling variants. Use it for Hinglish,
-where "kya" / "kia" / "क्या" are the same word.
+**CER** (characters) is gentler on spelling variants in the same script:
+"kya" vs "kia" is 1 error in 3 letters instead of a whole wrong word. It
+**can't** bridge scripts: "kya" vs "क्या" share no letters (~100% CER).
+Hinglish may come back romanised or in Devanagari, so write your
+reference in the script the model actually outputs. (Also, "क्या" is 4
+Unicode code points, so Hindi CER isn't comparable to English CER.)
 
 **Corpus WER** sums the errors over all files, *then* divides. Averaging
 per-file WERs would let a 2-word clip count as much as a 200-word one.
@@ -260,7 +264,7 @@ Aim for 2–3 clips of each of these (`04_stt/eval/` is git-ignored, since it's 
 | `clean` | normal voice, quiet room | the baseline |
 | `quiet` | the same sentences, softly, from 1 m away | deletions, and the VAD cutting words |
 | `accent` | Indian-accented English, naturally | the model's training data |
-| `hinglish` | "mujhe kal subah Pune ka ticket chahiye" | code-switching; compare `-l hi -l en` vs none, and look at CER |
+| `hinglish` | "mujhe kal subah Pune ka ticket chahiye" | code-switching; compare `-l hi -l en` vs none. Check which script comes back, match your reference to it, then compare CER |
 | `names` | "call Ravi Kulkarni at Infosys" | proper nouns; then try `-k` keywords |
 | `numbers` | "PNR 4521 9873 06, 10:45 am" | digits vs words (a normalisation trap) |
 | `pause` | "I want to… [2 s] …book a ticket" | VAD splitting one thought in two |
@@ -273,7 +277,11 @@ Then:
 .venv/Scripts/python 04_stt/evaluate.py 04_stt/eval -p openai -p deepgram --csv 04_stt/eval/results.csv
 .venv/Scripts/python 04_stt/evaluate.py 04_stt/eval --noise -35
 .venv/Scripts/python 04_stt/evaluate.py 04_stt/eval --vad          # does trimming cost words?
+.venv/Scripts/python 04_stt/evaluate.py 04_stt/eval -k Ravi -k Infosys   # do keywords fix names?
 ```
+
+The latency columns time only the attempt that succeeded. If a request
+was retried, the user actually waited longer.
 
 Look for patterns, not one number. Which category is worst? Are the errors
 mostly D (missed), S (misheard) or I (invented)? Is the median request time
@@ -314,6 +322,11 @@ agent streams.
   tests use fake HTTP and WebSocket servers. Your first real run is the
   real test. If `live.py` can't connect, the WebSocket URL is the
   likeliest culprit (`--url` overrides it). The guide doesn't spell it out.
+  Also unverified for this model: `input_audio_buffer.clear` and its
+  `cleared` reply. If the server never confirms a clear, the next turn
+  shows only its final (no partials), and later turns are fine. On your
+  first run, tap the desk once before speaking and check that partials
+  still show.
 - No file-response streaming (`stream=true` on `gpt-transcribe`, which
   streams the *text* of a finished file). Streaming the audio is the
   lesson here.

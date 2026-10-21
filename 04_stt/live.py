@@ -65,7 +65,6 @@ class Gate:
         self._ring: collections.deque = collections.deque(
             maxlen=max(1, round(preroll_ms / config.frame_ms)) + 1)
         self.sending = False      # are we inside a turn (audio going to the server)?
-        self._unsent = False      # ungated mode: audio in the server buffer not yet committed
 
     def push(self, frame: np.ndarray, db: float, frame_s: float | None = None) -> list[tuple]:
         before = self.vad.state
@@ -74,17 +73,20 @@ class Gate:
         if not self.gated:
             return self._ungated(frame, ended)
         actions: list[tuple] = []
+        # The ring always holds the latest frames, even while sending. After a
+        # false start we `clear` the server, so the next start must re-send
+        # them: they may hold the real onset (a soft "k" can dip for one frame).
+        self._ring.append(frame)
         if not self.sending:
-            self._ring.append(frame)
             if after == STARTING or self.vad.in_speech:
                 self.sending = True
                 actions += [(APPEND, f) for f in self._ring]
-                self._ring.clear()
         else:
             actions.append((APPEND, frame))
             if ended:
                 actions.append((COMMIT, ended[0]))
                 self.sending = False
+                self._ring.clear()  # committed audio must never be sent twice
             elif before == STARTING and not (after == STARTING or self.vad.in_speech):
                 actions.append((CLEAR,))  # it was a click, not speech
                 self.sending = False
@@ -92,10 +94,8 @@ class Gate:
 
     def _ungated(self, frame: np.ndarray, ended: list[Segment]) -> list[tuple]:
         actions: list[tuple] = [(APPEND, frame)]
-        self._unsent = True
         if ended:
             actions.append((COMMIT, ended[0]))
-            self._unsent = False
         return actions
 
     def flush(self) -> list[tuple]:
@@ -128,9 +128,13 @@ def committed(board: Board) -> list[Turn]:
     return [t for t in board.turns if t.commit_at is not None]
 
 
-def summary(board: Board, setup_s: float, bytes_sent: int, audio_s: float) -> str:
+def summary(board: Board, setup_s: float, bytes_sent: int, audio_s: float,
+            gated: bool = True) -> str:
     def gap(a, b):
         return f"{b - a:+.2f} s" if a is not None and b is not None else "  -    "
+
+    # Ungated, a turn's "first audio" is the silence after the last commit,
+    # so "first text" would mostly measure how long you were quiet. Hide it.
 
     lines = [f"\nSetup (connect + session.updated): {setup_s * 1000:.0f} ms   "
              f"sent {bytes_sent / 1024:.0f} KB of JSON for {audio_s:.2f} s of audio",
@@ -142,7 +146,8 @@ def summary(board: Board, setup_s: float, bytes_sent: int, audio_s: float) -> st
         text = (f'"{t.final}"' if t.final is not None else
                 f"ERROR: {t.error}" if t.error else
                 f'NO FINAL (late or lost); last partial "{t.partial}"')
-        lines.append(f"{t.number:>4}  {spoken}   {gap(t.first_audio_at, t.first_text_at):>9}   "
+        first = gap(t.first_audio_at, t.first_text_at) if gated else "  -    "
+        lines.append(f"{t.number:>4}  {spoken}   {first:>9}   "
                      f"{gap(t.commit_at, t.final_at):>9}     {gap(t.last_loud_at, t.final_at):>9}"
                      f"     {text}")
     if not committed(board):
@@ -218,7 +223,7 @@ def run(frames: Iterator[np.ndarray], fmt: AudioFormat, session: RealtimeSession
         log("\nStopped (Ctrl+C).")
     finally:
         session.close()
-    log(summary(board, setup_s, session.bytes_sent, sent_s))
+    log(summary(board, setup_s, session.bytes_sent, sent_s, gated=gate.gated))
     return board
 
 
@@ -267,10 +272,14 @@ def dry_run(session: RealtimeSession) -> None:
 def main(argv: list[str] | None = None, make_session: Callable[..., RealtimeSession] = RealtimeSession,
          sleep: Callable[[float], None] = time.sleep) -> int:
     args = parse_args(argv)
-    config = VadConfig(start_db=args.start_db, stop_db=args.stop_db,
-                       min_silence_ms=args.min_silence_ms)
-    session = make_session(model=args.model, languages=args.language, delay=args.delay,
-                           prompt=args.prompt, keywords=args.keyword, url=args.url)
+    try:  # bad thresholds or keywords: one error line, not a traceback
+        config = VadConfig(start_db=args.start_db, stop_db=args.stop_db,
+                           min_silence_ms=args.min_silence_ms)
+        session = make_session(model=args.model, languages=args.language, delay=args.delay,
+                               prompt=args.prompt, keywords=args.keyword, url=args.url)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     if args.dry_run:
         dry_run(session)
         return 0

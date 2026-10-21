@@ -92,7 +92,7 @@ def resample(samples: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
     # Output sample m sits at input position t = m * src / dst. Reduce the
     # ratio to up/down = L/M: then t's fractional part only takes L values
     # ("phases"), so the weights can be computed once per phase. That is
-    # the "polyphase" trick, and the difference between 7 s and 0.2 s here.
+    # the "polyphase" trick, and the difference between 7 s and 0.27 s for 10 s of 48 kHz audio.
     g = np.gcd(src_rate, dst_rate)
     up, down = dst_rate // g, src_rate // g
     m_total = n * dst_rate // src_rate

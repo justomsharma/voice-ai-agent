@@ -136,3 +136,25 @@ def test_api_key_is_stripped_and_validated_without_echo(tmp_path):
     with pytest.raises(SttError) as e:
         api_key("K", env={"K": "sk-ab c"}, env_file=tmp_path / "x")
     assert e.value.kind == "auth" and "sk-ab" not in str(e.value)
+
+
+def test_load_env_file_export_and_comments(tmp_path):
+    f = tmp_path / ".env"
+    f.write_text('export A=1\nB=two # note\nC="x # y" # note\nD=\'q\'\n')
+    assert load_env_file(f) == {"A": "1", "B": "two", "C": "x # y", "D": "q"}
+
+
+@pytest.mark.parametrize("bad", ["", "a<b", "a>b", "two\nlines", "cr\r"])
+def test_check_keywords_rejects_what_openai_rejects(bad):
+    from stt import check_keywords
+    with pytest.raises(ValueError, match="keyword"):
+        check_keywords(["Pune", bad])
+
+
+def test_openai_and_live_validate_keywords():
+    from openai_stt import OpenAIBatch
+    from realtime import session_update
+    with pytest.raises(ValueError):
+        OpenAIBatch(keywords=["<b>"])
+    with pytest.raises(ValueError):
+        session_update(keywords=["a\nb"])

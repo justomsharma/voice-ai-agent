@@ -118,7 +118,13 @@ def load_env_file(path: Path = ENV_FILE) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("\"'")
+        key = key.strip().removeprefix("export ").strip()   # shell-style files
+        value = value.strip()
+        if value[:1] in ("'", '"'):
+            value = value[1:].split(value[0], 1)[0]           # "quoted" # comment
+        else:
+            value = value.split(" #", 1)[0].strip()           # bare # comment
+        values[key] = value
     return values
 
 
@@ -136,6 +142,15 @@ def api_key(var: str, env: dict | None = None, env_file: Path = ENV_FILE) -> str
         raise SttError("auth", f"{var} contains spaces, line breaks or non-ASCII characters; "
                                "re-paste the key on one line")
     return value
+
+
+def check_keywords(keywords: list[str] | None) -> list[str]:
+    """OpenAI rejects the whole request if a keyword holds <, > or a line
+    break. Fail here instead, before paying for a round trip."""
+    for k in keywords or []:
+        if not k.strip() or any(c in k for c in "<>\r\n"):
+            raise ValueError(f"keyword {k!r} must be one line without < or >")
+    return list(keywords or [])
 
 
 # ---------------------------------------------------------------- HTTP
@@ -175,6 +190,8 @@ def http_post(url: str, headers: dict[str, str], body: bytes, timeout: float) ->
         data = resp.read()
         t4 = time.perf_counter()
     except (TimeoutError, socket.timeout) as e:
+        # `timeout` limits each socket wait, not the whole request: a server
+        # that trickles a byte every 29 s would never trip a 30 s timeout.
         raise SttError("timeout", f"no answer within {timeout:g} s", retryable=True) from e
     except ValueError as e:
         # http.client's "Invalid header value b'Bearer sk-...'" would print

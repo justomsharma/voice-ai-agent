@@ -303,3 +303,28 @@ def test_board_without_cleared_event_still_gets_the_final():
     b.apply(Update(COMMITTED, "real"))
     b.apply(Update(FINAL, "real", "book a ticket"))
     assert b.turns[0].final == "book a ticket"
+
+
+def test_board_clearing_ends_at_next_commit_even_without_cleared():
+    # If the server never confirms the clear, partials must come back after
+    # the next commit instead of vanishing for the rest of the session.
+    b = Board()
+    b.start_turn(at=0)
+    b.drop_last()                        # clear sent, no "cleared" ever arrives
+    for n, item in enumerate(["t1", "t2", "t3"], start=1):
+        b.start_turn(at=n)
+        b.apply(Update(PARTIAL, item, "word"))
+        b.committed(at=n + 0.5, last_loud_at=None, speech=None)
+        b.apply(Update(COMMITTED, item))
+        b.apply(Update(FINAL, item, f"turn {n}"))
+    assert [t.final for t in b.turns] == ["turn 1", "turn 2", "turn 3"]
+    assert [t.partial for t in b.turns] == ["", "word", "word"]  # only turn 1 is unsure
+    assert not b.clearing
+
+
+def test_board_error_reply_to_clear_ends_clearing():
+    b = Board()
+    b.start_turn(at=0)
+    b.drop_last()
+    b.apply(Update(ERROR, None, "Unknown event input_audio_buffer.clear"))
+    assert not b.clearing and b.errors

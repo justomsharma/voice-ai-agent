@@ -143,6 +143,8 @@ def report(rows: list[Row], providers: list[str], verbose: bool = False) -> str:
         s = total(mine)
         times = [r.request_s for r in mine if r.request_s is not None]
         audio = sum(r.seconds for r in mine if r.request_s is not None)
+        # Only the attempt that succeeded: retry waits aren't included, so
+        # under rate limiting a real user waits longer than this.
         lat = (f"request median {np.median(times) * 1000:.0f} ms, p90 {np.percentile(times, 90) * 1000:.0f} ms, "
                f"RTF {sum(times) / audio:.2f}" if times else "no successful requests")
         failed = sum(r.error is not None for r in mine)
@@ -190,6 +192,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--provider", "-p", action="append", choices=PROVIDERS, default=None,
                    help="repeatable (default: openai)")
     p.add_argument("--language", "-l", action="append", default=None, help="language hint, repeatable")
+    p.add_argument("--keyword", "-k", action="append", default=None,
+                   help="name/term to boost, repeatable (compare runs with and without)")
+    p.add_argument("--prompt", default=None, help="context for the model (OpenAI only)")
+    p.add_argument("--timeout", type=float, default=30.0, help="seconds per socket wait (default 30)")
+    p.add_argument("--retries", type=int, default=2, help="retries on transient errors (default 2)")
     p.add_argument("--vad", action="store_true", help="trim with Stage 03 before sending")
     p.add_argument("--noise", type=float, default=None, metavar="DB", help="add white noise, e.g. -35")
     p.add_argument("--csv", default=None, help="also save every row to this CSV")
@@ -200,24 +207,29 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None, make: Callable[..., BatchProvider] = make_provider) -> int:
     args = parse_args(argv)
     folder = Path(args.folder)
-    names = args.provider or ["openai"]
+    names = list(dict.fromkeys(args.provider or ["openai"]))  # -p x -p x = once
     try:
         if not folder.is_dir():
             raise ValueError(f"{folder} is not a folder (see the docstring for the layout)")
         pairs, missing = find_pairs(folder)
         if not pairs:
             raise ValueError(f"no X.wav + X.txt pairs in {folder}")
-        providers = [make(n, languages=args.language) for n in names]
+        providers = [make(n, languages=args.language, prompt=args.prompt, keywords=args.keyword,
+                          timeout=args.timeout) for n in names]
     except (ValueError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     for m in missing:
         print(f"skipping {m.name}: no {m.with_suffix('.txt').name}")
-    extras = (["VAD trim"] if args.vad else []) +         ([f"noise {args.noise:g} dBFS"] if args.noise is not None else [])
+    extras = ["VAD trim"] if args.vad else []
+    if args.noise is not None:
+        extras.append(f"noise {args.noise:g} dBFS")
+    if args.keyword:
+        extras.append(f"keywords {', '.join(args.keyword)}")
     print(f"Evaluating {len(pairs)} files with {', '.join(names)}"
           + (f" ({', '.join(extras)})" if extras else "") + "...")
     try:
-        rows = evaluate(pairs, providers, vad=args.vad, noise_db=args.noise)
+        rows = evaluate(pairs, providers, vad=args.vad, noise_db=args.noise, retries=args.retries)
     except (ValueError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

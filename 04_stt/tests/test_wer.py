@@ -79,3 +79,9 @@ def test_read_reference_any_common_encoding(tmp_path):
         f = tmp_path / f"{i}.txt"
         f.write_bytes(text.encode(enc))
         assert read_reference(f) == text.strip()
+
+
+def test_cer_cannot_bridge_scripts():
+    # Same word, two scripts: CER is no help. Match the reference's script.
+    assert cer("kya", "kia").rate == pytest.approx(1 / 3)
+    assert cer("kya", "क्या").rate >= 1.0

@@ -110,3 +110,9 @@ def test_too_short(tmp_path, capsys):
 def test_empty_transcript_is_reported(wav, capsys):
     _, out, _ = run([wav], FakeProvider(""), capsys)
     assert "(empty: no speech recognised)" in out
+
+
+@pytest.mark.parametrize("rate", ["0", "-16000"])
+def test_relabel_rate_must_be_positive(wav, capsys, rate):
+    code, _, err = run([wav, "--relabel-rate", rate], FakeProvider(), capsys)
+    assert code == 1 and "--relabel-rate must be > 0" in err

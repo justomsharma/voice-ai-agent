@@ -117,3 +117,23 @@ def test_temporary_429_does_not_stop_the_provider(folder, capsys, monkeypatch):
     p = ByFile("openai", {}, error=SttError("rate_limit", "slow down", retryable=True))
     run([folder], [p], capsys)
     assert len(p.received) == 2 * 3  # every file tried, each with 2 retries
+
+
+def test_duplicate_provider_runs_once(folder, capsys):
+    p = ByFile("openai", {1: "book a ticket", 2: "call ravi in pune"})
+    code, out = run([folder, "-p", "openai", "-p", "openai"], [p], capsys)
+    assert code == 0 and len(p.received) == 2
+
+
+def test_keywords_reach_the_provider(folder, capsys):
+    seen = {}
+    p = ByFile("openai", {1: "book a ticket", 2: "call ravi in pune"})
+
+    def make(name, **kw):
+        seen.update(kw)
+        return p
+
+    assert main([str(folder), "-k", "Ravi", "--prompt", "train booking", "--timeout", "5"],
+                make=make) == 0
+    assert seen["keywords"] == ["Ravi"] and seen["prompt"] == "train booking" and seen["timeout"] == 5
+    assert "keywords Ravi" in capsys.readouterr().out

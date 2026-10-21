@@ -39,7 +39,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from audio_prep import AudioContract
-from stt import SttError, api_key
+from stt import SttError, api_key, check_keywords
 
 URL = "wss://api.openai.com/v1/realtime?intent=transcription"
 MODEL = "gpt-live-transcribe"
@@ -64,7 +64,7 @@ def session_update(model: str = MODEL, languages: list[str] | None = None,
     if prompt:
         transcription["prompt"] = prompt
     if keywords:
-        transcription["keywords"] = keywords
+        transcription["keywords"] = check_keywords(keywords)
     return {"type": "session.update",
             "session": {"type": "transcription",
                         "audio": {"input": {
@@ -287,6 +287,9 @@ class Board:
     # After a clear, until the server confirms it, a NEW id could be the
     # click's or the next turn's. We can't tell, so we skip those partials.
     # (Committed events are still safe: they come from OUR commits, in order.)
+    # The docs don't promise a "cleared" reply for this model, so the next
+    # commit ack (sent after the clear, so processed after it) or an error
+    # also ends it. Worst case: one turn shows no partials, only its final.
     clearing: bool = False
 
     def start_turn(self, at: float) -> Turn:
@@ -314,7 +317,10 @@ class Board:
             return None
         if u.kind == ERROR and u.item_id is None:
             self.errors.append(u.text)
+            self.clearing = False  # e.g. the server rejected our clear
             return None
+        if u.kind == COMMITTED:
+            self.clearing = False
         if u.kind not in (COMMITTED, PARTIAL, FINAL, ERROR):
             return None
         turn = self._turn_for(u)
@@ -344,6 +350,9 @@ class Board:
                 return turn
         # Unknown id: the server's commits come back in the order we sent
         # them, so it belongs to the oldest turn that has no id yet.
+        # (One rare race remains: if turn N had no partials and turn N+1's
+        # first partial beats N's commit ack, it lands on N. Turns are at
+        # least min_silence apart, so this needs a very slow ack.)
         if self.clearing and u.kind != COMMITTED:
             if u.item_id is not None:
                 self.ignored.add(u.item_id)  # most likely the click's

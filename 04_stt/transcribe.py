@@ -120,7 +120,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--save-sent", default=None, metavar="WAV",
                    help="also write the exact audio that was sent, to listen to it")
     p.add_argument("--dry-run", action="store_true", help="show the request, don't send it")
-    p.add_argument("--timeout", type=float, default=30.0, help="seconds per attempt (default 30)")
+    p.add_argument("--timeout", type=float, default=30.0,
+                   help="max seconds of silence per socket wait (default 30)")
     p.add_argument("--retries", type=int, default=2, help="retries on transient errors (default 2)")
     return p.parse_args(argv)
 
@@ -133,13 +134,15 @@ def main(argv: list[str] | None = None,
                         prompt=args.prompt, keywords=args.keyword, timeout=args.timeout)
         fmt, samples = read_wav(args.wav)
         reference = reference_for(args)
+        if args.relabel_rate is not None and args.relabel_rate <= 0:
+            raise ValueError(f"--relabel-rate must be > 0, got {args.relabel_rate}")
     except (ValueError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
     print(f"Input:    {args.wav}   {fmt.sample_rate} Hz, {fmt.channels} ch, {fmt.bit_depth}-bit, "
           f"{fmt.duration_seconds(len(samples)):.2f} s")
-    if args.relabel_rate:
+    if args.relabel_rate is not None:
         fmt = AudioFormat(args.relabel_rate, fmt.channels)
         print(f"RELABEL:  pretending it's {fmt.sample_rate} Hz without resampling: it now "
               f"'lasts' {fmt.duration_seconds(len(samples)):.2f} s and sounds wrong")

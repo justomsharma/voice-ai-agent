@@ -26,7 +26,8 @@ exactly what goes over the wire. The SDK does the same thing for you.
 import uuid
 
 from audio_prep import AudioContract, Prepared, wav_bytes
-from stt import Post, SttError, Transcript, api_key, check_status, http_post, parse_json
+from stt import (Post, SttError, Transcript, api_key, check_keywords, check_status, http_post,
+                 parse_json)
 
 URL = "https://api.openai.com/v1/audio/transcriptions"
 DEFAULT_MODEL = "gpt-transcribe"
@@ -61,7 +62,7 @@ class OpenAIBatch:
         self.model = model or DEFAULT_MODEL
         self.languages = languages or []
         self.prompt = prompt
-        self.keywords = keywords or []
+        self.keywords = check_keywords(keywords)
         self.timeout = timeout
         self._key = key          # tests pass one; normally read from env at call time
         self._post = post
