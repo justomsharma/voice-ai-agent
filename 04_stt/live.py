@@ -186,6 +186,7 @@ def run(frames: Iterator[np.ndarray], fmt: AudioFormat, session: RealtimeSession
             elif action[0] == CLEAR:
                 session.clear()
                 board.drop_last()
+                log(f"[{now - t0:6.2f}s] false start (a click or tap): CLEAR, audio dropped")
 
     def drain(timeout: float = 0.0) -> bool:
         for u in session.poll(timeout):

@@ -221,3 +221,17 @@ def test_no_gate_hides_first_text_time(two_turns_wav):
         final_timeout=2.0, log=lines.append)
     row = next(line for line in lines[-1].splitlines() if line.strip().startswith("1 "))
     assert row.split("s   ")[1].strip().startswith("-")
+
+
+def test_run_logs_a_false_start(tmp_path):
+    path = tmp_path / "tap.wav"
+    x = np.concatenate([silence(0.5), tone(0.06), silence(0.5), tone(1), silence(1)])  # tap, then speech
+    write_wav(path, AudioFormat(16000, 1), x)
+    ws = FakeWs(FakeServer(["hello"]))
+    fmt, frames = wav_frames(str(path), 20)
+    lines = []
+    board = run(frames, fmt, make_session(ws)(), Gate(VadConfig()), paced=False,
+                final_timeout=2.0, log=lines.append)
+    assert any("false start" in line for line in lines)
+    assert [e["type"] for e in ws.sent].count("input_audio_buffer.clear") == 1
+    assert [t.final for t in board.turns] == ["hello"]
