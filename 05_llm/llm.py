@@ -426,7 +426,7 @@ class FakeLlm:
         sent = instructions + "".join(m.text for m in messages)
         out = estimate_tokens(text)
         usage = Usage(estimate_tokens(sent), out, 0, 0, estimate_tokens(sent) + out)
-        return Reply(text, self.name, self.settings.model,
+        return Reply(text, self.name, "fake-1",      # never pretend a real model answered
                      timings=Timings(0.0, 0.05, first, 0.2), usage=usage)
 
     def complete(self, instructions: str, messages: list[Message]) -> Reply:

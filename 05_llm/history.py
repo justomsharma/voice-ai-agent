@@ -75,6 +75,9 @@ class Conversation:
         if self.max_turns == 0:
             return False
         self.turns.append(Turn(Message("user", user_text), Message("assistant", reply.text)))
+        while self.max_turns is not None and len(self.turns) > self.max_turns:
+            self.turns.pop(0)       # what's stored never exceeds the limit either
+            self.forgotten += 1
         return True
 
     def clear(self) -> None:

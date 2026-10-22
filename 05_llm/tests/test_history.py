@@ -79,3 +79,10 @@ def test_new_message_is_sent_even_when_alone_it_is_over_budget():
     convo.commit("hi", Reply("hello", "fake", "m"))
     sent = convo.messages_for("w" * 400)
     assert [m.text for m in sent] == ["w" * 400]
+
+
+def test_stored_history_never_exceeds_max_turns():
+    convo = Conversation(max_turns=1)
+    convo.commit("q1", Reply("a1", "fake", "m"))
+    convo.commit("q2", Reply("a2", "fake", "m"))
+    assert [t.user.text for t in convo.turns] == ["q2"] and convo.forgotten == 1
