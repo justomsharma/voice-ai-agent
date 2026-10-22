@@ -35,11 +35,12 @@ HINTS = {
 
 # ---------------------------------------------------------------- shared CLI bits
 
-def add_llm_args(p: argparse.ArgumentParser, prompt: bool = True) -> None:
+def add_llm_args(p: argparse.ArgumentParser, prompt: bool = True, model: bool = True) -> None:
     """The options every Stage 05 script shares."""
     d = Settings()
     p.add_argument("--provider", choices=PROVIDERS, default="openai")
-    p.add_argument("--model", default=d.model, help=f"default {d.model}")
+    if model:
+        p.add_argument("--model", default=d.model, help=f"default {d.model}")
     p.add_argument("--effort", default=d.effort,
                    help=f"reasoning effort: none|low|medium|high|xhigh|max (default {d.effort})")
     p.add_argument("--max-output-tokens", type=int, default=d.max_output_tokens,
