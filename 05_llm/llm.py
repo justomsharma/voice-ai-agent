@@ -44,7 +44,6 @@ from typing import BinaryIO, Protocol
 from urllib.parse import urlsplit
 
 from config import Settings
-from stt import load_env_file   # Stage 04: same .env rules for every stage
 
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 MAX_RETRY_WAIT_S = 10.0
@@ -141,6 +140,27 @@ class LlmClient(Protocol):
 
 
 # ---------------------------------------------------------------- keys
+
+def load_env_file(path: Path) -> dict[str, str]:
+    """Parse KEY=VALUE lines, same rules as 04_stt/stt.py (copied so this
+    stage runs without the audio code). Comments, blanks, quotes; nothing else."""
+    if not path.is_file():
+        return {}
+    values = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip()
+        if value[:1] in ("'", '"'):
+            value = value[1:].split(value[0], 1)[0]
+        else:
+            value = value.split(" #", 1)[0].strip()
+        values[key] = value
+    return values
+
 
 def api_key(var: str, env: dict | None = None, env_file: Path | None = None) -> str:
     """Read a key from the environment, else from .env. Never printed or logged."""
