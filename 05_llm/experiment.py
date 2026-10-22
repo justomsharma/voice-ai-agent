@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from chat import add_llm_args, ms, settings_from
+from chat import add_llm_args, ms, safe_console, settings_from
 from config import load_prompt, prompt_names
 from llm import LlmClient, LlmError, Reply, make_client
 from spoken import has_markdown, speak_seconds, word_count
@@ -115,6 +115,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None, make: Callable[..., LlmClient] = make_client) -> int:
     args = parse_args(argv)
+    safe_console()
     prompts = args.prompt or prompt_names()
     questions = args.question or QUESTIONS
     try:

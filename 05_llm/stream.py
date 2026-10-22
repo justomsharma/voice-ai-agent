@@ -20,7 +20,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from chat import add_llm_args, instructions_from, ms, print_error, settings_from, stats
+from chat import (add_llm_args, instructions_from, ms, print_error, safe_console,
+                  settings_from, stats)
 from llm import LlmClient, LlmError, Message, Reply, make_client
 from spoken import first_sentence_end
 
@@ -121,6 +122,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None, make: Callable[..., LlmClient] = make_client) -> int:
     args = parse_args(argv)
+    safe_console()
     try:
         client = make(args.provider, settings_from(args))
         instructions = instructions_from(args)

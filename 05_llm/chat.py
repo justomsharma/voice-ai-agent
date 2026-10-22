@@ -69,6 +69,14 @@ def instructions_from(args: argparse.Namespace) -> str:
     return args.instructions if args.instructions is not None else load_prompt(args.prompt)
 
 
+def safe_console() -> None:
+    """Piped output on Windows is cp1252: an emoji in a reply would crash
+    print(). Replace what can't be shown instead."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def ms(seconds: float | None) -> str:
     return "-" if seconds is None else f"{seconds * 1000:.0f} ms"
 
@@ -114,6 +122,11 @@ def turn(client: LlmClient, convo: Conversation, text: str, stream: bool) -> Rep
     except LlmError as e:
         print_error(e)
         print("  memory: this turn was not saved", file=sys.stderr)
+        return None
+    except KeyboardInterrupt:
+        # Ctrl+C mid-reply: the text-chat version of the caller talking over
+        # the agent (barge-in, Stage 08). The half reply is not an answer.
+        print("\n  [interrupted] reply abandoned; this turn was not saved")
         return None
     if not reply.complete:
         print(f"  [incomplete: {reply.reason}] the reply was cut off, so it's not saved to memory")
@@ -170,6 +183,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None, make: Callable[..., LlmClient] = make_client,
          read: Callable[[str], str] = input) -> int:
     args = parse_args(argv)
+    safe_console()
     try:
         client = make(args.provider, settings_from(args))
         convo = Conversation(instructions_from(args),

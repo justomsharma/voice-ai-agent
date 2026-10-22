@@ -93,3 +93,18 @@ def test_incomplete_reply_is_shown_but_not_saved(capsys):
 def test_bad_settings_are_refused_before_any_call(capsys):
     code, fake = run(["hi", "--effort", "low", "--temperature", "0.5"])
     assert code == 1 and fake.calls == [] and "effort none" in capsys.readouterr().err
+
+
+def test_ctrl_c_mid_reply_abandons_the_turn_and_keeps_chatting(capsys):
+    class Interrupting(FakeLlm):
+        def complete(self, instructions, messages):
+            if len(self.calls) == 1:
+                self.calls.append((instructions, messages))
+                raise KeyboardInterrupt
+            return super().complete(instructions, messages)
+    fake = Interrupting("first", "third")
+    feed = ["one", "two", "three"]
+    main(["--provider", "fake"], make=lambda n, s: fake,
+         read=lambda p: feed.pop(0) if feed else "/quit")
+    assert "[interrupted]" in capsys.readouterr().out
+    assert [m.text for m in fake.calls[-1][1]] == ["one", "first", "three"]

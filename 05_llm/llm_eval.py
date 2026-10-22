@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from chat import add_llm_args, instructions_from, ms, settings_from
+from chat import add_llm_args, instructions_from, ms, safe_console, settings_from
 from config import Settings
 from llm import LlmClient, LlmError, Message, Reply, make_client
 from spoken import has_markdown, word_count
@@ -204,6 +204,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None, make: Callable[..., LlmClient] = make_client) -> int:
     args = parse_args(argv)
+    safe_console()
     try:
         cases = [c for c in load_cases(Path(args.cases))
                  if not args.category or c.category in args.category]
