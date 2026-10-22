@@ -13,7 +13,7 @@ hand first so it's clear what those frameworks do for you.
 | 02 | [02_streaming](02_streaming/) | UDP packets, delay, jitter, loss, jitter buffers | ✅ |
 | 03 | [03_vad](03_vad/) | Voice activity detection: RMS energy, thresholds, hysteresis, VAD vs turn detection | ✅ |
 | 04 | [04_stt](04_stt/) | Speech-to-text: audio contracts, resampling, batch vs streaming, partial vs final, WER | ✅ |
-| 05 | [05_llm](05_llm/) | Language model reply | — |
+| 05 | [05_llm](05_llm/) | LLM: instructions, tokens, conversation history, streaming (SSE), TTFT vs first sentence, evals | ✅ |
 | 06 | [06_tts](06_tts/) | Text-to-speech | — |
 | 07 | [07_realtime_pipeline](07_realtime_pipeline/) | mic → VAD → STT → LLM → TTS → speaker | — |
 | 08 | [08_turn_taking](08_turn_taking/) | End-of-turn detection, barge-in | — |
@@ -50,6 +50,12 @@ there's nothing else to install. On Linux, run `apt install libportaudio2`.
 .venv/Scripts/python 04_stt/transcribe.py 01_audio/recordings/take_16000hz.wav --dry-run
 .venv/Scripts/python 04_stt/transcribe.py 01_audio/recordings/take_16000hz.wav
 .venv/Scripts/python 04_stt/live.py
+
+# 05: the reply (same OPENAI_API_KEY)
+.venv/Scripts/python 05_llm/chat.py "What's the weather like?" --dry-run
+.venv/Scripts/python 05_llm/chat.py --stream
+.venv/Scripts/python 05_llm/stream.py "Explain how a refrigerator works." --compare
+.venv/Scripts/python 05_llm/llm_eval.py -v
 ```
 
-Start with [01_audio/README.md](01_audio/README.md), then [02_streaming/README.md](02_streaming/README.md), then [03_vad/README.md](03_vad/README.md), then [04_stt/README.md](04_stt/README.md).
+Start with [01_audio/README.md](01_audio/README.md), then [02_streaming/README.md](02_streaming/README.md), then [03_vad/README.md](03_vad/README.md), then [04_stt/README.md](04_stt/README.md), then [05_llm/README.md](05_llm/README.md).
