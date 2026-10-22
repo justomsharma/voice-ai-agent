@@ -23,7 +23,9 @@ def test_plain_speech_is_not_markdown(text):
 def test_first_sentence_end():
     assert first_sentence_end("Sure. Which city?") == 5
     assert first_sentence_end("It costs 1.5 dollars") is None   # a decimal point isn't an ending
-    assert first_sentence_end("Which city?") == 11
+    assert first_sentence_end("It costs 1.") is None             # mid-stream: "5" may follow
+    assert first_sentence_end("Which city?") is None
+    assert first_sentence_end("Which city?", done=True) == 11
 
 
 def test_describe_flags_markdown():

@@ -97,7 +97,7 @@ class Usage:
 
 @dataclass(frozen=True)
 class Timings:
-    connect_s: float = 0.0              # DNS + TCP + TLS
+    connect_s: float = 0.0              # setup + DNS + TCP + TLS
     wait_s: float = 0.0                 # request sent -> response headers
     first_text_s: float | None = None   # request start -> first visible text
     total_s: float = 0.0                # request start -> last byte
@@ -226,6 +226,16 @@ def _read_errors() -> Iterator[None]:
 
 
 Open = Callable[[str, dict[str, str], bytes, float], HttpStream]
+_tls: ssl.SSLContext | None = None
+
+
+def tls_context() -> ssl.SSLContext:
+    """Built once and reused: loading the system's trusted certificates takes
+    20-100 ms on Windows, and paying that on every turn is pure waste."""
+    global _tls
+    if _tls is None:
+        _tls = ssl.create_default_context()
+    return _tls
 
 
 def http_open(url: str, headers: dict[str, str], body: bytes, timeout: float) -> HttpStream:
@@ -235,15 +245,15 @@ def http_open(url: str, headers: dict[str, str], body: bytes, timeout: float) ->
     that), not the whole request: a server trickling one byte every 29 s would
     never trip a 30 s timeout.
     """
+    t0 = time.perf_counter()
     u = urlsplit(url)
     path = u.path + (f"?{u.query}" if u.query else "")
     if u.scheme == "http":   # only for tests against a local server
         conn = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
     else:
         conn = http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=timeout,
-                                           context=ssl.create_default_context())
+                                           context=tls_context())
     try:
-        t0 = time.perf_counter()
         conn.connect()
         t1 = time.perf_counter()
         conn.putrequest("POST", path)
