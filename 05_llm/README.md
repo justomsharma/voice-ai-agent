@@ -17,7 +17,7 @@ No tools, RAG, TTS or voice pipeline yet. Text in, text out.
 | `config.py` | Settings (model, effort, max tokens, temperature, timeout) and the prompt files |
 | `llm.py` | The provider **interface**, keys, timed streaming HTTP, the **SSE** parser, error kinds, retries, a fake client |
 | `openai_llm.py` | OpenAI **Responses API** adapter (`gpt-6-luna`), request and response JSON, stream events |
-| `history.py` | **Conversation history** we manage ourselves: commit, roll back, trim |
+| `history.py` | **Conversation history** we manage ourselves: save only complete turns, trim the oldest |
 | `spoken.py` | How a reply will *sound*: words, seconds to say, markdown, first sentence |
 | `chat.py` | **Milestones 1 + 3**: one message, or a multi-turn conversation |
 | `experiment.py` | **Milestone 2**: same questions, different instructions |
@@ -164,7 +164,8 @@ Two honesty rules in `history.py`:
 |---|---|
 | Reply **completed** | Turn saved (question + answer) |
 | Reply **incomplete** (hit `max_output_tokens`) | Shown, flagged, **not** saved |
-| Error / connection dropped mid-reply / Ctrl+C | Partial text labelled "NOT a complete answer", **not** saved, and neither is its question |
+| Error / connection dropped mid-reply | Partial text labelled "NOT a complete answer", **not** saved, and neither is its question |
+| Ctrl+C mid-reply (text-chat barge-in) | `[interrupted]`, **not** saved, and the chat carries on |
 
 We use `store: false` and send history ourselves, so you can *see* it.
 OpenAI can also keep it server-side (`previous_response_id`, or the

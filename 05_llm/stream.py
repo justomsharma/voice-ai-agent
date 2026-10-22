@@ -50,6 +50,19 @@ class Trace:
     def last_s(self) -> float | None:
         return self.pieces[-1][0] if self.pieces else None
 
+    def align(self, reply: Reply) -> "Trace":
+        """Put the pieces on the clock of the attempt that produced them.
+
+        Our clock started before the FIRST attempt; reply.timings only cover
+        the LAST one. Retries happen only before any text, so every piece came
+        from the last attempt: shift them so the first piece lands at that
+        attempt's first_text_s. Then first text, first sentence and total
+        share one clock. (reply.attempts says a retry happened.)"""
+        if self.pieces and reply.timings.first_text_s is not None:
+            shift = self.pieces[0][0] - reply.timings.first_text_s
+            self.pieces = [(t - shift, p) for t, p in self.pieces]
+        return self
+
     def first_sentence(self) -> tuple[float, str] | None:
         """(time, sentence): when the first sentence was complete."""
         text = ""
@@ -65,7 +78,7 @@ def stream_once(client: LlmClient, instructions: str, text: str,
                 echo: Callable[[str], None] | None = None) -> tuple[Reply, Trace]:
     trace = Trace(echo=echo)
     reply = client.stream(instructions, [Message("user", text)], trace)
-    return reply, trace
+    return reply, trace.align(reply)
 
 
 def timeline(trace: Trace) -> str:
@@ -148,7 +161,8 @@ def main(argv: list[str] | None = None, make: Callable[..., LlmClient] = make_cl
             firsts = [t.first_s for _, t in runs if t.first_s is not None]
             sentences = [s[0] for _, t in runs if (s := t.first_sentence())]
             print(f"\n{args.runs} runs:")
-            print(f"  first text      {spread(firsts)}")
+            if firsts:
+                print(f"  first text      {spread(firsts)}")
             if sentences:
                 print(f"  first sentence  {spread(sentences)}")
             print(f"  total           {spread([r.timings.total_s for r, _ in runs])}")

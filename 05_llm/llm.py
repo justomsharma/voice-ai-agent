@@ -33,6 +33,7 @@ So each wait can be timed on its own, exactly like Stage 04:
 import http.client
 import json
 import os
+import re
 import socket
 import ssl
 import time
@@ -254,30 +255,39 @@ def http_open(url: str, headers: dict[str, str], body: bytes, timeout: float) ->
         conn = http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=timeout,
                                            context=tls_context())
     try:
-        conn.connect()
-        t1 = time.perf_counter()
-        conn.putrequest("POST", path)
-        for name, value in {**headers, "Content-Length": str(len(body))}.items():
-            conn.putheader(name, value)
-        conn.endheaders()
-        conn.send(body)
-        t2 = time.perf_counter()
-        resp = conn.getresponse()            # blocks until the response headers arrive
-        t3 = time.perf_counter()
-    except (TimeoutError, socket.timeout) as e:
-        conn.close()
-        raise LlmError("timeout", f"no answer within {timeout:g} s", retryable=True) from e
-    except ValueError:
-        conn.close()
-        # http.client's "Invalid header value b'Bearer sk-...'" would print
-        # the key, so don't chain or repeat its message.
-        raise LlmError("bad_request", "invalid request header (check the API key for "
-                                      "stray characters)") from None
-    except (OSError, http.client.HTTPException) as e:
-        conn.close()
-        raise LlmError("network", f"{type(e).__name__}: {e}", retryable=True) from e
+        try:
+            conn.connect()
+            t1 = time.perf_counter()
+            conn.putrequest("POST", path)
+            for name, value in {**headers, "Content-Length": str(len(body))}.items():
+                conn.putheader(name, value)
+            conn.endheaders()
+            conn.send(body)
+            t2 = time.perf_counter()
+            resp = conn.getresponse()            # blocks until the response headers arrive
+            t3 = time.perf_counter()
+        except (TimeoutError, socket.timeout) as e:
+            raise LlmError("timeout", f"no answer within {timeout:g} s", retryable=True) from e
+        except ssl.SSLError as e:
+            # Before ValueError: certificate errors are BOTH an OSError and a
+            # ValueError, and must not be reported as a bad key.
+            raise LlmError("network", f"TLS problem: {e}. A proxy or antivirus inspecting "
+                                      "HTTPS, or a wrong system clock?") from e
+        except ValueError:
+            # http.client's "Invalid header value b'Bearer sk-...'" would print
+            # the key, so don't chain or repeat its message.
+            raise LlmError("bad_request", "invalid request header (check the API key for "
+                                          "stray characters)") from None
+        except (OSError, http.client.HTTPException) as e:
+            raise LlmError("network", f"{type(e).__name__}: {e}", retryable=True) from e
+    except BaseException:
+        conn.close()          # any failure, Ctrl+C included: don't leak the socket
+        raise
     return HttpStream(resp.status, {k.lower(): v for k, v in resp.getheaders()}, resp, t0,
                       connect_s=t1 - t0, wait_s=t3 - t2, close=conn.close)
+
+
+KEY_LIKE = re.compile(r"sk-[A-Za-z0-9_*-]+")
 
 
 def error_from_status(status: int, headers: dict[str, str], body: bytes) -> LlmError:
@@ -287,10 +297,13 @@ def error_from_status(status: int, headers: dict[str, str], body: bytes) -> LlmE
     try:
         err = json.loads(body)
         if isinstance(err.get("error"), dict):            # OpenAI style
-            message = err["error"].get("message") or message
+            message = str(err["error"].get("message") or message)
             code = err["error"].get("code") or err["error"].get("type") or ""
     except (ValueError, AttributeError):
         pass
+    # A 401 says "Incorrect API key provided: sk-proj-AbCd****wxyz". Even
+    # masked, part of a key doesn't belong in a terminal or a log.
+    message = KEY_LIKE.sub("sk-[redacted]", message)
     retry_after = None
     if "retry-after" in headers:
         try:
@@ -336,7 +349,10 @@ def iter_sse(lines: Iterable[bytes]) -> Iterator[tuple[str, str]]:
     """
     name, data = "", []
     for raw in lines:
-        line = raw.decode("utf-8").rstrip("\r\n")
+        try:
+            line = raw.decode("utf-8").rstrip("\r\n")
+        except UnicodeDecodeError as e:
+            raise LlmError("bad_response", f"event stream is not UTF-8: {raw[:40]!r}") from e
         if not line:
             if data:
                 yield name or "message", "\n".join(data)

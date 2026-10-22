@@ -174,7 +174,8 @@ class OpenAIResponses:
             raise failed_error(data)
         if status not in ("completed", "incomplete"):
             raise LlmError("bad_response", f"unexpected status {status!r}")
-        reason = (data.get("incomplete_details") or {}).get("reason")
+        details = data.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
         return Reply(text.strip(), self.name, data.get("model") or self.settings.model,
                      status, reason, timings, parse_usage(data.get("usage")),
                      request_id=headers.get("x-request-id"), response_id=data.get("id"))
@@ -200,7 +201,10 @@ def output_text(data: dict) -> str:
     for item in output:
         if not isinstance(item, dict) or item.get("type") != "message":
             continue        # reasoning items, tool calls (Stage 09), ...
-        for part in item.get("content") or []:
+        content = item.get("content")
+        for part in content if isinstance(content, list) else []:
+            if not isinstance(part, dict):
+                continue
             if part.get("type") == "output_text":
                 parts.append(part.get("text") or "")
             elif part.get("type") == "refusal":
@@ -219,7 +223,9 @@ def parse_usage(u) -> Usage:
 
 def failed_error(data: dict) -> LlmError:
     """status "failed": the request was accepted, then the model run broke."""
-    err = data.get("error") or {}
+    err = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(err, dict):
+        err = {"message": str(err)} if err else {}
     code = err.get("code") or "unknown"
     return LlmError("server" if code == "server_error" else "failed",
                     f"{code}: {err.get('message') or 'the response failed'}",

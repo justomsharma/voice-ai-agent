@@ -52,6 +52,8 @@ class Settings:
                 raise ValueError("temperature only works with --effort none")
         if self.timeout_s <= 0:
             raise ValueError("timeout must be positive")
+        if self.retries < 0:
+            raise ValueError("retries can't be negative")
         return self
 
 

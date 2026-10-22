@@ -120,6 +120,7 @@ def run_case(client: LlmClient, instructions: str, case: Case, history: bool = T
     trace = Trace()
     try:
         result.reply = client.stream(instructions, messages, trace)
+        trace.align(result.reply)
     except LlmError as e:
         result.error = str(e)
         return result
@@ -184,7 +185,10 @@ def model_specs(specs: list[str] | None, default_model: str, default_effort: str
     out = []
     for spec in specs or [default_model]:
         name, _, effort = spec.partition(":")
-        out.append((name, effort or default_effort))
+        if effort == "default":
+            out.append((name, None))      # don't send it: the model's own default
+        else:
+            out.append((name, effort or default_effort))
     return out
 
 

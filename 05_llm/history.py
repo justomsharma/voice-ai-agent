@@ -82,3 +82,4 @@ class Conversation:
 
     def clear(self) -> None:
         self.turns.clear()
+        self.forgotten = 0
